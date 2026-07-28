@@ -5,9 +5,11 @@ import type { VisualTarget } from "@elfui/devtools-shared";
 
 import {
   AIContextBuilder,
+  DisplayMediaScreenshotAdapter,
   ScreenshotController,
   type CapturedScreenshotAsset,
   type ScreenshotCaptureAdapter,
+  projectScreenshotCapture,
 } from "./context";
 import { VisualIntentSession } from "./visual";
 
@@ -34,6 +36,104 @@ const target: VisualTarget = {
 };
 
 describe("ScreenshotController and AIContextBuilder", () => {
+  it("projects viewport coordinates into captured pixels and masks exclusions", () => {
+    expect(
+      projectScreenshotCapture(
+        { width: 800, height: 600 },
+        { width: 1600, height: 1200 },
+        {
+          kind: "selection",
+          selection: { x: 100, y: 50, width: 200, height: 100 },
+          excludedRegions: [{ x: 150, y: 75, width: 50, height: 25 }],
+        },
+      ),
+    ).toEqual({
+      clip: { x: 100, y: 50, width: 200, height: 100 },
+      source: { x: 200, y: 100, width: 400, height: 200 },
+      output: { width: 400, height: 200 },
+      masks: [{ x: 100, y: 50, width: 100, height: 50 }],
+      scaleX: 2,
+      scaleY: 2,
+    });
+    expect(() =>
+      projectScreenshotCapture(
+        { width: 800, height: 600 },
+        { width: 1600, height: 1200 },
+        { kind: "selection", excludedRegions: [] },
+      ),
+    ).toThrow("Selection screenshots require a selection rectangle");
+  });
+
+  it("captures the current tab, crops a selection, masks sensitive regions, and stops sharing", async () => {
+    const stop = vi.fn();
+    const track = {
+      getSettings: () => ({ displaySurface: "browser" }),
+      stop,
+    };
+    const stream = {
+      getVideoTracks: () => [track],
+      getTracks: () => [track],
+    } as unknown as MediaStream;
+    const getDisplayMedia = vi.fn().mockResolvedValue(stream);
+    const play = vi.fn().mockResolvedValue(undefined);
+    const video = {
+      muted: false,
+      playsInline: false,
+      srcObject: null,
+      videoWidth: 2048,
+      videoHeight: 1536,
+      play,
+      addEventListener: vi.fn(),
+    } as unknown as HTMLVideoElement;
+    const drawImage = vi.fn();
+    const fillRect = vi.fn();
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: () => ({ drawImage, fillRect, fillStyle: "" }),
+      toDataURL: () => "data:image/png;base64,AAAA",
+    } as unknown as HTMLCanvasElement;
+    const adapter = new DisplayMediaScreenshotAdapter({
+      document,
+      getDisplayMedia,
+      createVideo: () => video,
+      createCanvas: () => canvas,
+    });
+
+    const result = await adapter.capture({
+      kind: "selection",
+      selection: { x: 100, y: 50, width: 200, height: 100 },
+      excludedRegions: [{ x: 150, y: 75, width: 50, height: 25 }],
+    });
+
+    expect(getDisplayMedia).toHaveBeenCalledWith({
+      video: { displaySurface: "browser" },
+      audio: false,
+    });
+    expect(drawImage).toHaveBeenCalledWith(
+      video,
+      200,
+      100,
+      400,
+      200,
+      0,
+      0,
+      400,
+      200,
+    );
+    expect(fillRect).toHaveBeenCalledWith(100, 50, 100, 50);
+    expect(result).toEqual({
+      dataUrl: "data:image/png;base64,AAAA",
+      mimeType: "image/png",
+      width: 400,
+      height: 200,
+      devicePixelRatio: 2,
+    });
+    expect(play).toHaveBeenCalled();
+    expect(stop).toHaveBeenCalled();
+    expect(video.srcObject).toBeNull();
+  });
+
   it("stores screenshot bytes separately and exposes capture metadata in Pipeline", async () => {
     const bridge = createDevtoolsBridge({ now: () => 40 });
     const visual = new VisualIntentSession(bridge, {

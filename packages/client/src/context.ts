@@ -29,6 +29,7 @@ export interface ScreenshotCaptureResult {
   mimeType: ScreenshotAsset["mimeType"];
   width: number;
   height: number;
+  devicePixelRatio?: number;
 }
 
 export interface ScreenshotCaptureAdapter {
@@ -38,6 +39,203 @@ export interface ScreenshotCaptureAdapter {
 export interface CapturedScreenshotAsset extends ScreenshotAsset {
   dataUrl: string;
 }
+
+type DisplayMediaCapture = (
+  options: DisplayMediaStreamOptions,
+) => Promise<MediaStream>;
+
+export interface DisplayMediaScreenshotAdapterOptions {
+  document?: Document;
+  getDisplayMedia?: DisplayMediaCapture;
+  createVideo?: () => HTMLVideoElement;
+  createCanvas?: () => HTMLCanvasElement;
+}
+
+export interface ProjectedScreenshotCapture {
+  clip: RectSnapshot;
+  source: RectSnapshot;
+  output: { width: number; height: number };
+  masks: RectSnapshot[];
+  scaleX: number;
+  scaleY: number;
+}
+
+const intersectRects = (
+  first: RectSnapshot,
+  second: RectSnapshot,
+): RectSnapshot | null => {
+  const x = Math.max(first.x, second.x);
+  const y = Math.max(first.y, second.y);
+  const right = Math.min(first.x + first.width, second.x + second.width);
+  const bottom = Math.min(first.y + first.height, second.y + second.height);
+  return right > x && bottom > y
+    ? { x, y, width: right - x, height: bottom - y }
+    : null;
+};
+
+export const projectScreenshotCapture = (
+  viewport: { width: number; height: number },
+  frame: { width: number; height: number },
+  input: ScreenshotCaptureInput,
+): ProjectedScreenshotCapture => {
+  if (
+    viewport.width <= 0 ||
+    viewport.height <= 0 ||
+    frame.width <= 0 ||
+    frame.height <= 0
+  )
+    throw new Error("Screenshot dimensions must be greater than zero");
+  const viewportRect: RectSnapshot = {
+    x: 0,
+    y: 0,
+    width: viewport.width,
+    height: viewport.height,
+  };
+  if (input.kind === "selection" && !input.selection)
+    throw new Error("Selection screenshots require a selection rectangle");
+  const clip =
+    input.kind === "selection" && input.selection
+      ? intersectRects(viewportRect, input.selection)
+      : viewportRect;
+  if (!clip) throw new Error("Screenshot selection is outside the viewport");
+  const scaleX = frame.width / viewport.width;
+  const scaleY = frame.height / viewport.height;
+  const output = {
+    width: Math.max(1, Math.round(clip.width * scaleX)),
+    height: Math.max(1, Math.round(clip.height * scaleY)),
+  };
+  const masks = input.excludedRegions.flatMap((region) => {
+    const intersection = intersectRects(clip, region);
+    return intersection
+      ? [
+          {
+            x: Math.round((intersection.x - clip.x) * scaleX),
+            y: Math.round((intersection.y - clip.y) * scaleY),
+            width: Math.round(intersection.width * scaleX),
+            height: Math.round(intersection.height * scaleY),
+          },
+        ]
+      : [];
+  });
+  return {
+    clip,
+    source: {
+      x: clip.x * scaleX,
+      y: clip.y * scaleY,
+      width: clip.width * scaleX,
+      height: clip.height * scaleY,
+    },
+    output,
+    masks,
+    scaleX,
+    scaleY,
+  };
+};
+
+export class DisplayMediaScreenshotAdapter implements ScreenshotCaptureAdapter {
+  private readonly document: Document;
+  private readonly getDisplayMedia: DisplayMediaCapture | undefined;
+  private readonly createVideo: () => HTMLVideoElement;
+  private readonly createCanvas: () => HTMLCanvasElement;
+
+  public constructor(options: DisplayMediaScreenshotAdapterOptions = {}) {
+    this.document = options.document ?? document;
+    const mediaDevices = this.document.defaultView?.navigator.mediaDevices;
+    this.getDisplayMedia =
+      options.getDisplayMedia ??
+      (mediaDevices?.getDisplayMedia
+        ? mediaDevices.getDisplayMedia.bind(mediaDevices)
+        : undefined);
+    this.createVideo =
+      options.createVideo ?? (() => this.document.createElement("video"));
+    this.createCanvas =
+      options.createCanvas ?? (() => this.document.createElement("canvas"));
+  }
+
+  public get supported(): boolean {
+    return Boolean(this.getDisplayMedia);
+  }
+
+  public async capture(
+    input: ScreenshotCaptureInput,
+  ): Promise<ScreenshotCaptureResult> {
+    if (!this.getDisplayMedia)
+      throw new Error("Browser tab capture is not supported in this browser");
+    const stream = await this.getDisplayMedia({
+      video: { displaySurface: "browser" },
+      audio: false,
+    });
+    const video = this.createVideo();
+    try {
+      const track = stream.getVideoTracks()[0];
+      if (!track) throw new Error("Screen capture did not provide a video");
+      const displaySurface = track.getSettings().displaySurface;
+      if (displaySurface && displaySurface !== "browser")
+        throw new Error("Choose the current browser tab for an exact capture");
+      video.muted = true;
+      video.playsInline = true;
+      video.srcObject = stream;
+      if (!video.videoWidth || !video.videoHeight)
+        await new Promise<void>((resolve, reject) => {
+          video.addEventListener("loadedmetadata", () => resolve(), {
+            once: true,
+          });
+          video.addEventListener(
+            "error",
+            () => reject(new Error("Could not read the captured browser tab")),
+            { once: true },
+          );
+        });
+      await video.play();
+      const view = this.document.defaultView;
+      const projection = projectScreenshotCapture(
+        {
+          width: view?.innerWidth ?? video.videoWidth,
+          height: view?.innerHeight ?? video.videoHeight,
+        },
+        { width: video.videoWidth, height: video.videoHeight },
+        input,
+      );
+      const canvas = this.createCanvas();
+      canvas.width = projection.output.width;
+      canvas.height = projection.output.height;
+      const context = canvas.getContext("2d");
+      if (!context)
+        throw new Error("Canvas screenshot rendering is unavailable");
+      context.drawImage(
+        video,
+        projection.source.x,
+        projection.source.y,
+        projection.source.width,
+        projection.source.height,
+        0,
+        0,
+        projection.output.width,
+        projection.output.height,
+      );
+      context.fillStyle = "#111827";
+      for (const mask of projection.masks)
+        context.fillRect(mask.x, mask.y, mask.width, mask.height);
+      return {
+        dataUrl: canvas.toDataURL("image/png"),
+        mimeType: "image/png",
+        width: projection.output.width,
+        height: projection.output.height,
+        devicePixelRatio: projection.scaleX,
+      };
+    } finally {
+      video.srcObject = null;
+      for (const track of stream.getTracks()) track.stop();
+    }
+  }
+}
+
+export const createDisplayMediaScreenshotAdapter = (
+  options: DisplayMediaScreenshotAdapterOptions = {},
+): DisplayMediaScreenshotAdapter | null => {
+  const adapter = new DisplayMediaScreenshotAdapter(options);
+  return adapter.supported ? adapter : null;
+};
 
 export interface ScreenshotControllerOptions {
   document?: Document;
@@ -98,7 +296,7 @@ export class ScreenshotController {
       mimeType: result.mimeType,
       width: result.width,
       height: result.height,
-      devicePixelRatio: view?.devicePixelRatio ?? 1,
+      devicePixelRatio: result.devicePixelRatio ?? view?.devicePixelRatio ?? 1,
       route: view?.location
         ? `${view.location.pathname}${view.location.search}${view.location.hash}`
         : "/",
@@ -141,6 +339,16 @@ export class ScreenshotController {
       excludedRegions: asset.excludedRegions.map((item) => ({ ...item })),
     }));
   }
+
+  public retainAssets(ids: readonly string[]): void {
+    const retained = new Set(ids);
+    for (const id of this.assets.keys())
+      if (!retained.has(id)) this.assets.delete(id);
+  }
+
+  public clear(): void {
+    this.assets.clear();
+  }
 }
 
 export interface AIContextBuilderOptions {
@@ -182,7 +390,8 @@ export class AIContextBuilder {
     if (
       draft.targets.length === 0 &&
       draft.intents.length === 0 &&
-      draft.annotations.length === 0
+      draft.annotations.length === 0 &&
+      draft.screenshotIds.length === 0
     )
       throw new Error("Visual draft is empty");
     const view = this.document.defaultView;

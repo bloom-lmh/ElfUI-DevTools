@@ -180,7 +180,8 @@ export type VisualAnnotationType =
   | "comment"
   | "rectangle"
   | "arrow"
-  | "highlight";
+  | "highlight"
+  | "redaction";
 
 export interface VisualAnnotation {
   id: string;

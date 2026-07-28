@@ -7,9 +7,13 @@ import type {
   InspectorTargetSnapshot,
   PipelineRecord,
   PipelineStateSnapshot,
+  RectSnapshot,
+  ScreenshotKind,
+  ScreenshotPhase,
   SerializedValue,
   TimelineEvent,
   TimelineStatusSnapshot,
+  VisualDraft,
 } from "@elfui/devtools-shared";
 import type { ElfUIDevtoolsBridge } from "@elfui/devtools-runtime";
 
@@ -18,7 +22,12 @@ import {
   createInspectorTargetSnapshot,
   findTemplateNode,
 } from "./index.js";
-import { AIContextBuilder } from "./context.js";
+import {
+  AIContextBuilder,
+  createDisplayMediaScreenshotAdapter,
+  ScreenshotController,
+  type ScreenshotCaptureAdapter,
+} from "./context.js";
 import type { DevtoolsRpcClient } from "./rpc-client.js";
 import { openSourceInEditor, type OpenSourceInEditor } from "./source.js";
 import { VisualToolsController } from "./visual.js";
@@ -356,6 +365,8 @@ const styles = `
   .visual-draft { margin-top: 9px; border: 1px solid #7c2d12; border-radius: 7px; padding: 7px; background: #1c1917; }
   .visual-draft .section-title { color: #fdba74; }
   .visual-draft p { margin: 0; color: #fed7aa; }
+  .visual-capture { display: grid; grid-template-columns: 1fr 1fr auto; gap: 5px; align-items: center; }
+  .visual-capture-status { grid-column: 1 / -1; color: #fdba74; font-size: 11px; }
   .source-action { margin: 8px 0 0; border: 1px solid #0ea5e9; border-radius: 5px; padding: 4px 8px; background: #082f49; color: #bae6fd; cursor: pointer; }
   .source-action:disabled { cursor: wait; opacity: .65; }
   .component-tools { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
@@ -479,6 +490,7 @@ export class DevtoolsPanel {
   private readonly inspector: ComponentInspector;
   private readonly visualTools: VisualToolsController;
   private readonly aiContext: AIContextBuilder;
+  private readonly screenshots: ScreenshotController | null;
   private selectedId: string | null = null;
   private selectedTarget: InspectorTargetSnapshot | null = null;
   private selectedTemplateNodeId: string | null = null;
@@ -503,12 +515,17 @@ export class DevtoolsPanel {
   private selectedAppId: string | null;
   private fullscreen = false;
   private resizeStart: ResizeStart | null = null;
+  private screenshotPhase: ScreenshotPhase = "before";
+  private screenshotKind: ScreenshotKind = "viewport";
+  private screenshotStatus = "";
+  private capturingScreenshot = false;
 
   public constructor(
     private readonly bridge: ElfUIDevtoolsBridge,
     private readonly document: Document = window.document,
     private readonly rpc?: DevtoolsRpcClient,
     private readonly openSource: OpenSourceInEditor = openSourceInEditor,
+    screenshotAdapter?: ScreenshotCaptureAdapter,
   ) {
     this.storage = storageFor(document);
     const layout = readLayout(this.storage);
@@ -614,6 +631,16 @@ export class DevtoolsPanel {
     this.aiContext = new AIContextBuilder(bridge, this.visualTools, {
       document,
     });
+    const captureAdapter =
+      screenshotAdapter ??
+      createDisplayMediaScreenshotAdapter({
+        document,
+      });
+    this.screenshots = captureAdapter
+      ? new ScreenshotController(bridge, this.visualTools, captureAdapter, {
+          document,
+        })
+      : null;
     this.document.addEventListener("keydown", this.onDocumentKeyDown, true);
     this.stop = bridge.on(() => this.scheduleRender());
     this.stopPipeline = bridge.onPipeline(() => this.scheduleRender());
@@ -632,6 +659,7 @@ export class DevtoolsPanel {
       this.document.defaultView?.clearTimeout(this.selectionRecoveryTimer);
     this.inspector.dispose();
     this.visualTools.dispose();
+    this.screenshots?.clear();
     this.document.removeEventListener("keydown", this.onDocumentKeyDown, true);
     this.document.defaultView?.removeEventListener(
       "pointermove",
@@ -823,6 +851,122 @@ export class DevtoolsPanel {
         )
         ?.focus();
     });
+  }
+
+  private devtoolsExcludedRegions(): RectSnapshot[] {
+    const regions: RectSnapshot[] = [];
+    for (const element of [
+      this.shadow.querySelector<HTMLElement>("[data-elfui-devtools=launcher]"),
+      this.panel.hidden ? null : this.panel,
+    ]) {
+      if (!element) continue;
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      regions.push({
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      });
+    }
+    return regions;
+  }
+
+  private visualScreenshotSelection(draft: VisualDraft): RectSnapshot | null {
+    const target = draft.targets.at(-1);
+    if (!target) return null;
+    const intent = [...draft.intents]
+      .reverse()
+      .find((candidate) => candidate.targetId === target.id);
+    const desired =
+      intent?.type === "move" || intent?.type === "resize"
+        ? intent.desired
+        : target.geometry;
+    const left = Math.min(target.geometry.x, desired.x);
+    const top = Math.min(target.geometry.y, desired.y);
+    const right = Math.max(
+      target.geometry.x + target.geometry.width,
+      desired.x + desired.width,
+    );
+    const bottom = Math.max(
+      target.geometry.y + target.geometry.height,
+      desired.y + desired.height,
+    );
+    const padding = 16;
+    const view = this.document.defaultView;
+    const x = Math.max(0, left - padding);
+    const y = Math.max(0, top - padding);
+    return {
+      x,
+      y,
+      width: Math.max(
+        1,
+        Math.min(view?.innerWidth ?? right + padding, right + padding) - x,
+      ),
+      height: Math.max(
+        1,
+        Math.min(view?.innerHeight ?? bottom + padding, bottom + padding) - y,
+      ),
+    };
+  }
+
+  private async captureVisualScreenshot(): Promise<void> {
+    if (!this.screenshots || this.capturingScreenshot) return;
+    const draft = this.visualTools.getDraft();
+    const selection =
+      this.screenshotKind === "selection"
+        ? this.visualScreenshotSelection(draft)
+        : undefined;
+    if (this.screenshotKind === "selection" && !selection) {
+      this.screenshotStatus = "Select a visual target before capturing it.";
+      this.render();
+      return;
+    }
+    this.capturingScreenshot = true;
+    this.screenshotStatus = "Choose the current browser tab to capture…";
+    this.render();
+    try {
+      const asset = await this.screenshots.capture(
+        this.screenshotPhase,
+        this.screenshotKind,
+        {
+          ...(selection ? { selection } : {}),
+          excludedRegions: [
+            ...this.devtoolsExcludedRegions(),
+            ...draft.annotations.flatMap((annotation) =>
+              annotation.type === "redaction" && annotation.geometry
+                ? [{ ...annotation.geometry }]
+                : [],
+            ),
+          ],
+        },
+      );
+      this.screenshotStatus = `Captured ${asset.phase} ${asset.kind} · ${asset.width}×${asset.height}`;
+    } catch (error) {
+      const cancelled =
+        error instanceof DOMException && error.name === "NotAllowedError";
+      const message = cancelled
+        ? "Screenshot capture cancelled."
+        : error instanceof Error
+          ? error.message
+          : String(error);
+      this.screenshotStatus = message;
+      this.bridge.recordPipeline({
+        taskId: this.visualTools.id,
+        stage: "visual-intent",
+        source: "visual-tools",
+        kind: "visual.screenshot.error",
+        summary: message,
+        payload: {
+          phase: this.screenshotPhase,
+          kind: this.screenshotKind,
+          error: message,
+        },
+      });
+    } finally {
+      this.capturingScreenshot = false;
+      this.render();
+    }
   }
 
   private selectComponent(
@@ -1434,7 +1578,8 @@ export class DevtoolsPanel {
       this.visualTools.enabled ||
       visualDraft.targets.length ||
       visualDraft.intents.length ||
-      visualDraft.annotations.length
+      visualDraft.annotations.length ||
+      visualDraft.screenshotIds.length
     ) {
       const visualSection = this.document.createElement("section");
       visualSection.className = "visual-draft";
@@ -1456,9 +1601,12 @@ export class DevtoolsPanel {
       visualTool.setAttribute("aria-label", "Visual draft tool");
       for (const [value, label] of [
         ["move", "Move (Ghost)"],
+        ["resize", "Resize (Ghost)"],
         ["rectangle", "Rectangle"],
         ["arrow", "Arrow"],
         ["highlight", "Highlight"],
+        ["comment", "Comment"],
+        ["redaction", "Redact screenshot"],
       ] as const) {
         const option = this.document.createElement("option");
         option.value = value;
@@ -1469,12 +1617,93 @@ export class DevtoolsPanel {
       visualTool.onchange = () => {
         if (
           visualTool.value === "move" ||
+          visualTool.value === "resize" ||
           visualTool.value === "rectangle" ||
           visualTool.value === "arrow" ||
-          visualTool.value === "highlight"
-        )
+          visualTool.value === "highlight" ||
+          visualTool.value === "comment" ||
+          visualTool.value === "redaction"
+        ) {
           this.visualTools.setTool(visualTool.value);
+          this.scheduleRender();
+        }
       };
+      const visualComment = this.document.createElement("input");
+      visualComment.className = "component-search";
+      visualComment.type = "text";
+      visualComment.placeholder = "Comment for the selected point";
+      visualComment.setAttribute("aria-label", "Visual annotation comment");
+      visualComment.value = this.visualTools.selectedCommentText;
+      visualComment.disabled = this.visualTools.selectedTool !== "comment";
+      visualComment.oninput = () =>
+        this.visualTools.setCommentText(visualComment.value);
+      const screenshotControls = this.document.createElement("div");
+      screenshotControls.className = "visual-capture";
+      const screenshotPhase = this.document.createElement("select");
+      screenshotPhase.setAttribute("aria-label", "Screenshot phase");
+      for (const [value, label] of [
+        ["before", "Before"],
+        ["desired", "Desired"],
+      ] as const) {
+        const option = this.document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        screenshotPhase.append(option);
+      }
+      screenshotPhase.value = this.screenshotPhase;
+      screenshotPhase.onchange = () => {
+        if (
+          screenshotPhase.value === "before" ||
+          screenshotPhase.value === "desired"
+        )
+          this.screenshotPhase = screenshotPhase.value;
+      };
+      const screenshotKind = this.document.createElement("select");
+      screenshotKind.setAttribute("aria-label", "Screenshot area");
+      for (const [value, label] of [
+        ["viewport", "Viewport"],
+        ["selection", "Target + draft"],
+      ] as const) {
+        const option = this.document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        screenshotKind.append(option);
+      }
+      screenshotKind.value = this.screenshotKind;
+      screenshotKind.onchange = () => {
+        if (
+          screenshotKind.value === "viewport" ||
+          screenshotKind.value === "selection"
+        )
+          this.screenshotKind = screenshotKind.value;
+      };
+      const captureScreenshot = this.document.createElement("button");
+      captureScreenshot.type = "button";
+      captureScreenshot.textContent = this.capturingScreenshot
+        ? "Capturing…"
+        : "Capture";
+      captureScreenshot.setAttribute("aria-label", "Capture visual screenshot");
+      captureScreenshot.title = this.screenshots
+        ? "The browser will ask you to share the current tab."
+        : "Browser tab capture is unavailable.";
+      captureScreenshot.disabled =
+        !this.screenshots ||
+        this.capturingScreenshot ||
+        (this.screenshotKind === "selection" &&
+          visualDraft.targets.length === 0);
+      captureScreenshot.onclick = () => void this.captureVisualScreenshot();
+      screenshotControls.append(
+        screenshotPhase,
+        screenshotKind,
+        captureScreenshot,
+      );
+      if (this.screenshotStatus) {
+        const screenshotStatus = this.document.createElement("p");
+        screenshotStatus.className = "visual-capture-status";
+        screenshotStatus.setAttribute("role", "status");
+        screenshotStatus.textContent = this.screenshotStatus;
+        screenshotControls.append(screenshotStatus);
+      }
       const clearVisual = this.document.createElement("button");
       clearVisual.type = "button";
       clearVisual.textContent = "Clear visual draft";
@@ -1482,6 +1711,17 @@ export class DevtoolsPanel {
       clearVisual.onclick = () => {
         this.visualTools.clear();
         this.render();
+      };
+      const undoVisual = this.document.createElement("button");
+      undoVisual.type = "button";
+      undoVisual.textContent = "Undo draft";
+      undoVisual.setAttribute("aria-label", "Undo visual draft change");
+      undoVisual.disabled = !this.visualTools.canUndo;
+      undoVisual.onclick = () => {
+        this.visualTools.undo();
+        this.screenshots?.retainAssets(
+          this.visualTools.getDraft().screenshotIds,
+        );
       };
       const prepareAIRequest = this.document.createElement("button");
       prepareAIRequest.type = "button";
@@ -1492,10 +1732,14 @@ export class DevtoolsPanel {
       prepareAIRequest.disabled =
         visualDraft.targets.length === 0 &&
         visualDraft.intents.length === 0 &&
-        visualDraft.annotations.length === 0;
+        visualDraft.annotations.length === 0 &&
+        visualDraft.screenshotIds.length === 0;
       prepareAIRequest.onclick = () => {
         this.aiContext.build({
           conversationId: `conversation:${visualDraft.id}`,
+          ...(this.screenshots
+            ? { screenshots: this.screenshots.getAssets() }
+            : {}),
         });
         this.activeTab = "pipeline";
         this.persistPreferences();
@@ -1505,7 +1749,10 @@ export class DevtoolsPanel {
         visualTitle,
         visualSummary,
         visualTool,
+        visualComment,
+        screenshotControls,
         prepareAIRequest,
+        undoVisual,
         clearVisual,
       );
       components.append(visualSection);

@@ -458,15 +458,17 @@ PatchProposal、文件 hash 和用户批准记录。
 - [x] 实现不修改业务 DOM 的 Ghost 移动预览，并将 target capture、move preview 和 annotation 写入 Data Pipeline。
 - [ ] 实现样式 Preview CSS layer。
 - [ ] 实现 Ghost 移动、缩放和语义关系候选。
-- [ ] 实现矩形、箭头、高亮和评论。
-- [ ] 实现 viewport/选区截图与敏感区域排除。
+- [x] 实现矩形、箭头、高亮和评论。
+- [x] 实现 viewport/选区截图与敏感区域排除。
 - [ ] 实现 Visual Draft 历史、撤销、清空和会话恢复。
 - [ ] 页面导航、HMR 或节点消失时清理或重定位草稿。
 
 阶段进展（2026-07-28）：
 
-- 截图已建立 `before` / `desired` / `result`、viewport/selection、route、viewport、DPR、scroll、敏感区域排除和字节大小元数据；实际浏览器捕获通过可注入 adapter 隔离，二进制不会直接写入 Data Pipeline。
-- Visual Draft 可关联多个截图 ID；矩形、箭头和高亮已进入独立 Annotation Layer，评论和实际截图 UI 仍待完成。
+- 截图已建立 `before` / `desired` / `result`、viewport/selection、route、viewport、DPR、scroll、敏感区域排除和字节大小元数据；浏览器 capture adapter 会请求当前 Tab、裁剪目标与 Ghost 范围、遮罩 DevTools 及用户 Redact 区域并立即停止共享。
+- Visual Draft 可关联多个截图 ID；矩形、箭头、高亮和评论均进入独立 Annotation Layer。
+- Ghost 移动和缩放已生成独立 intent，语义关系候选仍待完成。
+- Visual Draft 已有 50 步有界内存历史、Undo、Clear 和 schema 校验恢复 API；跨刷新会话持久化仍待完成。
 
 退出标准：
 

@@ -519,11 +519,19 @@ export type {
   VisualIntentSessionOptions,
   VisualToolsControllerOptions,
 } from "./visual.js";
-export { AIContextBuilder, ScreenshotController } from "./context.js";
+export {
+  AIContextBuilder,
+  createDisplayMediaScreenshotAdapter,
+  DisplayMediaScreenshotAdapter,
+  projectScreenshotCapture,
+  ScreenshotController,
+} from "./context.js";
 export type {
   AIContextBuilderOptions,
   BuildAIChangeRequestInput,
   CapturedScreenshotAsset,
+  DisplayMediaScreenshotAdapterOptions,
+  ProjectedScreenshotCapture,
   ScreenshotCaptureAdapter,
   ScreenshotCaptureInput,
   ScreenshotCaptureResult,

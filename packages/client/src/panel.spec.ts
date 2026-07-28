@@ -730,6 +730,90 @@ describe("DevtoolsPanel", () => {
     panel.dispose();
   });
 
+  it("captures a phased viewport screenshot and includes only its metadata in the AI request", async () => {
+    const bridge = createDevtoolsBridge({ now: () => 95 });
+    const capture = vi.fn().mockResolvedValue({
+      dataUrl: "data:image/png;base64,AAAA",
+      mimeType: "image/png",
+      width: 1280,
+      height: 720,
+      devicePixelRatio: 2,
+    });
+    const panel = new DevtoolsPanel(
+      bridge,
+      document,
+      undefined,
+      vi.fn().mockResolvedValue(undefined),
+      { capture },
+    );
+    const shadow = document.querySelector<HTMLElement>(
+      "[data-elfui-devtools=host]",
+    )?.shadowRoot;
+
+    shadow
+      ?.querySelector<HTMLButtonElement>('[aria-label="Toggle Visual Draft"]')
+      ?.click();
+    const tool = await vi.waitFor(() => {
+      const element = shadow?.querySelector<HTMLSelectElement>(
+        '[aria-label="Visual draft tool"]',
+      );
+      expect(element).not.toBeNull();
+      return element;
+    });
+    if (tool) {
+      tool.value = "redaction";
+      tool.dispatchEvent(new Event("change"));
+    }
+    document.body.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 20,
+        clientY: 30,
+      }),
+    );
+    document.body.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        button: 0,
+        clientX: 80,
+        clientY: 70,
+      }),
+    );
+    const captureButton = await vi.waitFor(() => {
+      const element = shadow?.querySelector<HTMLButtonElement>(
+        '[aria-label="Capture visual screenshot"]',
+      );
+      expect(element?.disabled).toBe(false);
+      return element;
+    });
+    captureButton?.click();
+
+    await vi.waitFor(() => {
+      expect(capture).toHaveBeenCalledWith({
+        kind: "viewport",
+        excludedRegions: [{ x: 20, y: 30, width: 60, height: 40 }],
+      });
+      expect(shadow?.textContent).toContain(
+        "Captured before viewport · 1280×720",
+      );
+    });
+    shadow
+      ?.querySelector<HTMLButtonElement>(
+        '[aria-label="Prepare AI change request"]',
+      )
+      ?.click();
+
+    const requestRecord = bridge
+      .getPipelineState()
+      .records.find((record) => record.kind === "ai.request.create");
+    const payload = JSON.stringify(requestRecord?.payload);
+    expect(payload).toContain("screenshot:");
+    expect(payload).toContain("before");
+    expect(payload).not.toContain("data:image/png");
+    panel.dispose();
+  });
+
   it("docks, resizes, enters fullscreen, and restores persisted layout", () => {
     window.localStorage.setItem(
       DEVTOOLS_LAYOUT_STORAGE_KEY,

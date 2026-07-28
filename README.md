@@ -36,6 +36,11 @@ references, and constraints into an auditable `AIChangeRequest`; this step does 
 or write files. Screenshot bytes stay in an in-memory asset controller while Pipeline records expose
 inspectable metadata.
 
+Visual Draft also supports Ghost-only resizing, anchored comments, bounded Undo, and browser-tab
+screenshots. Screenshot capture can use the full viewport or the latest target plus its desired Ghost
+geometry; DevTools regions and user-drawn Redact annotations are masked, screen sharing stops
+immediately after the frame is read, and raw image bytes never enter Data Pipeline.
+
 For source locations, the compiler may attach a development-only `__elfSource` field to a component constructor:
 
 ```ts

@@ -20,6 +20,7 @@ import {
 export interface VisualIntentSessionOptions {
   now?: () => number;
   draftId?: string;
+  historyLimit?: number;
 }
 
 export interface VisualToolsControllerOptions {
@@ -27,7 +28,7 @@ export interface VisualToolsControllerOptions {
   onDraftChange?: (draft: VisualDraft) => void;
 }
 
-export type VisualTool = "move" | Exclude<VisualAnnotationType, "comment">;
+export type VisualTool = "move" | "resize" | VisualAnnotationType;
 
 const copyRect = (rect: RectSnapshot): RectSnapshot => ({ ...rect });
 
@@ -80,15 +81,34 @@ const copyIntent = (intent: VisualIntent): VisualIntent => {
   return { ...intent };
 };
 
+const copyAnnotation = (annotation: VisualAnnotation): VisualAnnotation => ({
+  ...annotation,
+  targetIds: [...annotation.targetIds],
+  ...(annotation.geometry ? { geometry: copyRect(annotation.geometry) } : {}),
+  ...(annotation.from ? { from: { ...annotation.from } } : {}),
+  ...(annotation.to ? { to: { ...annotation.to } } : {}),
+});
+
+const copyDraft = (draft: VisualDraft): VisualDraft => ({
+  ...draft,
+  targets: draft.targets.map(copyTarget),
+  intents: draft.intents.map(copyIntent),
+  annotations: draft.annotations.map(copyAnnotation),
+  screenshotIds: [...draft.screenshotIds],
+});
+
 export class VisualIntentSession {
   private readonly now: () => number;
-  private readonly draft: VisualDraft;
+  private readonly historyLimit: number;
+  private draft: VisualDraft;
+  private readonly history: VisualDraft[] = [];
 
   public constructor(
     private readonly bridge: ElfUIDevtoolsBridge,
     options: VisualIntentSessionOptions = {},
   ) {
     this.now = options.now ?? Date.now;
+    this.historyLimit = options.historyLimit ?? 50;
     this.draft = {
       schemaVersion: DEVTOOLS_VISUAL_SCHEMA_VERSION,
       id: options.draftId ?? `visual-draft:${this.now()}`,
@@ -103,25 +123,16 @@ export class VisualIntentSession {
     return this.draft.id;
   }
 
+  public get canUndo(): boolean {
+    return this.history.length > 0;
+  }
+
   public getDraft(): VisualDraft {
-    return {
-      ...this.draft,
-      targets: this.draft.targets.map(copyTarget),
-      intents: this.draft.intents.map(copyIntent),
-      annotations: this.draft.annotations.map((annotation) => ({
-        ...annotation,
-        targetIds: [...annotation.targetIds],
-        ...(annotation.geometry
-          ? { geometry: copyRect(annotation.geometry) }
-          : {}),
-        ...(annotation.from ? { from: { ...annotation.from } } : {}),
-        ...(annotation.to ? { to: { ...annotation.to } } : {}),
-      })),
-      screenshotIds: [...this.draft.screenshotIds],
-    };
+    return copyDraft(this.draft);
   }
 
   public captureTarget(target: VisualTarget): VisualTarget {
+    this.pushHistory();
     const index = this.draft.targets.findIndex(
       (candidate) => candidate.id === target.id,
     );
@@ -147,6 +158,7 @@ export class VisualIntentSession {
       (candidate) => candidate.id === targetId,
     );
     if (!target) throw new Error(`Unknown visual target "${targetId}"`);
+    this.pushHistory();
     const intent: VisualIntent = {
       id: `visual-intent:move:${targetId}`,
       type: "move",
@@ -175,6 +187,39 @@ export class VisualIntentSession {
     };
   }
 
+  public previewResize(targetId: string, desired: RectSnapshot): VisualIntent {
+    const target = this.draft.targets.find(
+      (candidate) => candidate.id === targetId,
+    );
+    if (!target) throw new Error(`Unknown visual target "${targetId}"`);
+    this.pushHistory();
+    const intent: VisualIntent = {
+      id: `visual-intent:resize:${targetId}`,
+      type: "resize",
+      targetId,
+      before: copyRect(target.geometry),
+      desired: copyRect(desired),
+    };
+    const index = this.draft.intents.findIndex(
+      (candidate) => candidate.id === intent.id,
+    );
+    if (index === -1) this.draft.intents.push(intent);
+    else this.draft.intents[index] = intent;
+    this.bridge.recordPipeline({
+      taskId: this.draft.id,
+      stage: "visual-intent",
+      source: "visual-tools",
+      kind: "visual.resize.preview",
+      summary: `Previewed resizing ${targetId}`,
+      payload: intent,
+    });
+    return {
+      ...intent,
+      before: copyRect(intent.before),
+      desired: copyRect(intent.desired),
+    };
+  }
+
   public addAnnotation(annotation: VisualAnnotation): VisualAnnotation {
     const missingTarget = annotation.targetIds.find(
       (targetId) =>
@@ -182,6 +227,7 @@ export class VisualIntentSession {
     );
     if (missingTarget)
       throw new Error(`Unknown visual target "${missingTarget}"`);
+    this.pushHistory();
     this.draft.annotations.push({
       ...annotation,
       targetIds: [...annotation.targetIds],
@@ -198,11 +244,62 @@ export class VisualIntentSession {
   }
 
   public attachScreenshot(screenshotId: string): void {
-    if (!this.draft.screenshotIds.includes(screenshotId))
+    if (!this.draft.screenshotIds.includes(screenshotId)) {
+      this.pushHistory();
       this.draft.screenshotIds.push(screenshotId);
+    }
+  }
+
+  public undo(): VisualDraft | null {
+    const previous = this.history.pop();
+    if (!previous) return null;
+    this.draft = previous;
+    this.bridge.recordPipeline({
+      taskId: this.draft.id,
+      stage: "visual-intent",
+      source: "visual-tools",
+      kind: "visual.draft.undo",
+      summary: "Undid the latest visual draft change",
+      payload: {
+        draftId: this.draft.id,
+        remainingHistory: this.history.length,
+      },
+    });
+    return this.getDraft();
+  }
+
+  public restore(draft: VisualDraft): VisualDraft {
+    if (draft.schemaVersion !== DEVTOOLS_VISUAL_SCHEMA_VERSION)
+      throw new Error(
+        `Unsupported visual draft schema ${String(draft.schemaVersion)}`,
+      );
+    this.pushHistory();
+    this.draft = copyDraft(draft);
+    this.bridge.recordPipeline({
+      taskId: this.draft.id,
+      stage: "visual-intent",
+      source: "visual-tools",
+      kind: "visual.draft.restore",
+      summary: `Restored visual draft ${this.draft.id}`,
+      payload: {
+        draftId: this.draft.id,
+        targets: this.draft.targets.length,
+        intents: this.draft.intents.length,
+        annotations: this.draft.annotations.length,
+        screenshots: this.draft.screenshotIds.length,
+      },
+    });
+    return this.getDraft();
   }
 
   public clear(): void {
+    if (
+      this.draft.targets.length ||
+      this.draft.intents.length ||
+      this.draft.annotations.length ||
+      this.draft.screenshotIds.length
+    )
+      this.pushHistory();
     this.draft.targets.length = 0;
     this.draft.intents.length = 0;
     this.draft.annotations.length = 0;
@@ -215,6 +312,12 @@ export class VisualIntentSession {
       summary: "Cleared visual draft",
       payload: { draftId: this.draft.id },
     });
+  }
+
+  private pushHistory(): void {
+    if (this.historyLimit <= 0) return;
+    this.history.push(this.getDraft());
+    if (this.history.length > this.historyLimit) this.history.shift();
   }
 }
 
@@ -242,6 +345,7 @@ const hostForTarget = (
 };
 
 interface VisualDragState {
+  type: "move" | "resize";
   targetId: string;
   before: RectSnapshot;
   pointerX: number;
@@ -249,7 +353,7 @@ interface VisualDragState {
 }
 
 interface VisualAnnotationState {
-  type: Exclude<VisualAnnotationType, "comment">;
+  type: VisualAnnotationType;
   startX: number;
   startY: number;
   targetIds: string[];
@@ -264,6 +368,8 @@ export class VisualToolsController {
   private readonly annotationLayer: HTMLDivElement;
   private active = false;
   private tool: VisualTool = "move";
+  private commentText = "";
+  private nextAnnotationId = 1;
   private drag: VisualDragState | null = null;
   private annotation: VisualAnnotationState | null = null;
   private readonly observedClosedRoots = new Set<ShadowRoot>();
@@ -313,6 +419,10 @@ export class VisualToolsController {
     return this.session.getDraft();
   }
 
+  public get canUndo(): boolean {
+    return this.session.canUndo;
+  }
+
   public attachScreenshot(screenshotId: string): void {
     this.session.attachScreenshot(screenshotId);
     this.onDraftChange?.(this.session.getDraft());
@@ -322,10 +432,18 @@ export class VisualToolsController {
     return this.tool;
   }
 
+  public get selectedCommentText(): string {
+    return this.commentText;
+  }
+
   public setTool(tool: VisualTool): void {
     this.tool = tool;
     this.drag = null;
     this.annotation = null;
+  }
+
+  public setCommentText(text: string): void {
+    this.commentText = text;
   }
 
   public enable(): void {
@@ -360,6 +478,20 @@ export class VisualToolsController {
     this.session.clear();
     this.ghost.style.display = "none";
     this.annotationLayer.replaceChildren();
+    this.onDraftChange?.(this.session.getDraft());
+  }
+
+  public undo(): void {
+    if (!this.session.undo()) return;
+    this.ghost.style.display = "none";
+    this.renderAnnotations();
+    this.onDraftChange?.(this.session.getDraft());
+  }
+
+  public restore(draft: VisualDraft): void {
+    this.session.restore(draft);
+    this.ghost.style.display = "none";
+    this.renderAnnotations();
     this.onDraftChange?.(this.session.getDraft());
   }
 
@@ -409,7 +541,7 @@ export class VisualToolsController {
         ? createVisualTargetSnapshot(this.bridge, componentId, target, host)
         : null;
     if (visualTarget) this.session.captureTarget(visualTarget);
-    if (this.tool === "move") {
+    if (this.tool === "move" || this.tool === "resize") {
       if (!visualTarget) return;
       const inspector = createInspectorTargetSnapshot(
         this.bridge,
@@ -418,6 +550,7 @@ export class VisualToolsController {
         host!,
       );
       this.drag = {
+        type: this.tool,
         targetId: visualTarget.id,
         before: { ...visualTarget.geometry },
         pointerX: event.clientX,
@@ -438,6 +571,13 @@ export class VisualToolsController {
       this.ghost.dataset.tool = this.tool;
       if (this.tool === "highlight" && visualTarget)
         this.positionGhost(visualTarget.geometry);
+      else if (this.tool === "comment")
+        this.positionGhost({
+          x: event.clientX - 6,
+          y: event.clientY - 6,
+          width: 12,
+          height: 12,
+        });
       else
         this.positionGhost({
           x: event.clientX,
@@ -453,13 +593,13 @@ export class VisualToolsController {
 
   private readonly onPointerMove = (event: PointerEvent): void => {
     if (this.drag) {
-      const desired = {
-        ...this.drag.before,
-        x: this.drag.before.x + event.clientX - this.drag.pointerX,
-        y: this.drag.before.y + event.clientY - this.drag.pointerY,
-      };
+      const desired = this.dragRect(this.drag, event);
       this.positionGhost(desired);
-    } else if (this.annotation && this.annotation.type !== "highlight") {
+    } else if (
+      this.annotation &&
+      this.annotation.type !== "highlight" &&
+      this.annotation.type !== "comment"
+    ) {
       this.positionGhost(
         this.annotationRect(
           this.annotation.startX,
@@ -475,19 +615,27 @@ export class VisualToolsController {
 
   private readonly onPointerUp = (event: PointerEvent): void => {
     if (this.drag) {
-      const desired = {
-        ...this.drag.before,
-        x: this.drag.before.x + event.clientX - this.drag.pointerX,
-        y: this.drag.before.y + event.clientY - this.drag.pointerY,
-      };
-      this.session.previewMove(this.drag.targetId, desired);
+      const desired = this.dragRect(this.drag, event);
+      if (this.drag.type === "move")
+        this.session.previewMove(this.drag.targetId, desired);
+      else this.session.previewResize(this.drag.targetId, desired);
       this.drag = null;
       this.positionGhost(desired);
     } else if (this.annotation) {
       const annotation = this.annotation;
-      if (annotation.type === "highlight" && annotation.targetGeometry) {
+      if (annotation.type === "comment") {
+        const text = this.commentText.trim();
         this.session.addAnnotation({
-          id: `annotation:${this.session.id}:${this.now()}`,
+          id: this.annotationId(),
+          type: "comment",
+          targetIds: annotation.targetIds,
+          ...(text ? { text } : {}),
+          from: { x: annotation.startX, y: annotation.startY },
+          createdAt: this.now(),
+        });
+      } else if (annotation.type === "highlight" && annotation.targetGeometry) {
+        this.session.addAnnotation({
+          id: this.annotationId(),
           type: "highlight",
           targetIds: annotation.targetIds,
           geometry: annotation.targetGeometry,
@@ -495,7 +643,7 @@ export class VisualToolsController {
         });
       } else if (annotation.type === "arrow") {
         this.session.addAnnotation({
-          id: `annotation:${this.session.id}:${this.now()}`,
+          id: this.annotationId(),
           type: "arrow",
           targetIds: annotation.targetIds,
           from: { x: annotation.startX, y: annotation.startY },
@@ -504,8 +652,8 @@ export class VisualToolsController {
         });
       } else {
         this.session.addAnnotation({
-          id: `annotation:${this.session.id}:${this.now()}`,
-          type: "rectangle",
+          id: this.annotationId(),
+          type: annotation.type === "redaction" ? "redaction" : "rectangle",
           targetIds: annotation.targetIds,
           geometry: this.annotationRect(
             annotation.startX,
@@ -526,6 +674,26 @@ export class VisualToolsController {
 
   private now(): number {
     return Date.now();
+  }
+
+  private annotationId(): string {
+    return `annotation:${this.session.id}:${this.now()}:${this.nextAnnotationId++}`;
+  }
+
+  private dragRect(drag: VisualDragState, event: PointerEvent): RectSnapshot {
+    const deltaX = event.clientX - drag.pointerX;
+    const deltaY = event.clientY - drag.pointerY;
+    return drag.type === "move"
+      ? {
+          ...drag.before,
+          x: drag.before.x + deltaX,
+          y: drag.before.y + deltaY,
+        }
+      : {
+          ...drag.before,
+          width: Math.max(1, drag.before.width + deltaX),
+          height: Math.max(1, drag.before.height + deltaY),
+        };
   }
 
   private annotationRect(
@@ -567,11 +735,15 @@ export class VisualToolsController {
         marker.style.border =
           annotation.type === "highlight"
             ? "2px solid #facc15"
-            : "2px solid #ef4444";
+            : annotation.type === "redaction"
+              ? "2px solid #111827"
+              : "2px solid #ef4444";
         marker.style.background =
           annotation.type === "highlight"
             ? "rgb(250 204 21 / 12%)"
-            : "rgb(239 68 68 / 8%)";
+            : annotation.type === "redaction"
+              ? "#111827"
+              : "rgb(239 68 68 / 8%)";
       } else if (annotation.from && annotation.to) {
         const dx = annotation.to.x - annotation.from.x;
         const dy = annotation.to.y - annotation.from.y;
@@ -583,6 +755,17 @@ export class VisualToolsController {
         marker.style.borderTop = "2px solid #ef4444";
         marker.style.transformOrigin = "0 0";
         marker.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+      } else if (annotation.type === "comment" && annotation.from) {
+        marker.style.left = `${annotation.from.x}px`;
+        marker.style.top = `${annotation.from.y}px`;
+        marker.style.maxWidth = "240px";
+        marker.style.border = "1px solid #f97316";
+        marker.style.borderRadius = "999px";
+        marker.style.padding = "4px 8px";
+        marker.style.background = "#431407";
+        marker.style.color = "#ffedd5";
+        marker.style.font = "600 11px system-ui";
+        marker.textContent = annotation.text ?? "Comment";
       }
       this.annotationLayer.append(marker);
     }

@@ -332,9 +332,9 @@ export class VisualToolsController {
     this.document.removeEventListener("pointermove", this.onPointerMove, true);
     this.document.removeEventListener("pointerup", this.onPointerUp, true);
     for (const root of this.observedClosedRoots) {
-      root.removeEventListener("pointerdown", this.onPointerDown, true);
-      root.removeEventListener("pointermove", this.onPointerMove, true);
-      root.removeEventListener("pointerup", this.onPointerUp, true);
+      root.removeEventListener("pointerdown", this.onRootPointerDown, true);
+      root.removeEventListener("pointermove", this.onRootPointerMove, true);
+      root.removeEventListener("pointerup", this.onRootPointerUp, true);
     }
     this.observedClosedRoots.clear();
   }
@@ -360,19 +360,26 @@ export class VisualToolsController {
       if (!(root instanceof ShadowRoot) || host.shadowRoot === root) continue;
       next.add(root);
       if (this.observedClosedRoots.has(root)) continue;
-      root.addEventListener("pointerdown", this.onPointerDown, true);
-      root.addEventListener("pointermove", this.onPointerMove, true);
-      root.addEventListener("pointerup", this.onPointerUp, true);
+      root.addEventListener("pointerdown", this.onRootPointerDown, true);
+      root.addEventListener("pointermove", this.onRootPointerMove, true);
+      root.addEventListener("pointerup", this.onRootPointerUp, true);
     }
     for (const root of this.observedClosedRoots)
       if (!next.has(root)) {
-        root.removeEventListener("pointerdown", this.onPointerDown, true);
-        root.removeEventListener("pointermove", this.onPointerMove, true);
-        root.removeEventListener("pointerup", this.onPointerUp, true);
+        root.removeEventListener("pointerdown", this.onRootPointerDown, true);
+        root.removeEventListener("pointermove", this.onRootPointerMove, true);
+        root.removeEventListener("pointerup", this.onRootPointerUp, true);
       }
     this.observedClosedRoots.clear();
     for (const root of next) this.observedClosedRoots.add(root);
   }
+
+  private readonly onRootPointerDown: EventListener = (event) =>
+    this.onPointerDown(event as PointerEvent);
+  private readonly onRootPointerMove: EventListener = (event) =>
+    this.onPointerMove(event as PointerEvent);
+  private readonly onRootPointerUp: EventListener = (event) =>
+    this.onPointerUp(event as PointerEvent);
 
   private readonly onPointerDown = (event: PointerEvent): void => {
     if (!this.active || event.button !== 0) return;

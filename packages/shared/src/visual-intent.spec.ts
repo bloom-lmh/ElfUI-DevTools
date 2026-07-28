@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEVTOOLS_AI_CHANGE_SCHEMA_VERSION,
   DEVTOOLS_VISUAL_SCHEMA_VERSION,
   serialize,
+  type AIChangeRequest,
   type VisualDraft,
 } from "./index";
 
@@ -55,6 +57,7 @@ describe("Visual Intent protocol", () => {
           createdAt: 100,
         },
       ],
+      screenshotIds: [],
     };
 
     const serialized = serialize(draft);
@@ -89,5 +92,51 @@ describe("Visual Intent protocol", () => {
     };
     expect(styleIntent.type).toBe("style");
     expect(resizeIntent.type).toBe("resize");
+  });
+
+  it("round-trips a provider-neutral AI change request as JSON", () => {
+    const request: AIChangeRequest = {
+      schemaVersion: DEVTOOLS_AI_CHANGE_SCHEMA_VERSION,
+      id: "ai-change:1",
+      conversationId: "conversation:1",
+      project: { framework: "elfui", frameworkVersion: "0.1.0-beta.15" },
+      page: {
+        url: "http://localhost:5173/card",
+        route: "/card",
+        title: "Card demo",
+        viewport: { width: 1280, height: 720 },
+        devicePixelRatio: 2,
+        scroll: { x: 0, y: 100 },
+      },
+      targets: [],
+      intents: [],
+      annotations: [],
+      screenshots: [
+        {
+          id: "screenshot:before",
+          kind: "viewport",
+          phase: "before",
+          mimeType: "image/png",
+          width: 2560,
+          height: 1440,
+          devicePixelRatio: 2,
+          route: "/card",
+          scroll: { x: 0, y: 100 },
+          capturedAt: 100,
+          excludedRegions: [],
+          byteLength: 2048,
+        },
+      ],
+      sourceContext: [],
+      constraints: {
+        preserveResponsiveLayout: true,
+        preserveAccessibility: true,
+        preservePublicAPI: true,
+      },
+    };
+
+    expect(JSON.parse(JSON.stringify(request))).toEqual(request);
+    expect(JSON.stringify(request)).not.toContain("openai");
+    expect(JSON.stringify(request)).not.toContain("anthropic");
   });
 });

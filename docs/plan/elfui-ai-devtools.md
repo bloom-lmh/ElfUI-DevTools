@@ -463,6 +463,11 @@ PatchProposal、文件 hash 和用户批准记录。
 - [ ] 实现 Visual Draft 历史、撤销、清空和会话恢复。
 - [ ] 页面导航、HMR 或节点消失时清理或重定位草稿。
 
+阶段进展（2026-07-28）：
+
+- 截图已建立 `before` / `desired` / `result`、viewport/selection、route、viewport、DPR、scroll、敏感区域排除和字节大小元数据；实际浏览器捕获通过可注入 adapter 隔离，二进制不会直接写入 Data Pipeline。
+- Visual Draft 可关联多个截图 ID；矩形、箭头和高亮已进入独立 Annotation Layer，评论和实际截图 UI 仍待完成。
+
 退出标准：
 
 - 所有视觉操作只改变草稿层，不修改源码。
@@ -471,14 +476,20 @@ PatchProposal、文件 hash 和用户批准记录。
 
 ## P3：AI Context Builder 与会话
 
-- [ ] 实现 `AIChangeRequest` schema。
-- [ ] 根据选区收集最小组件、Fragment、binding 和源码范围。
-- [ ] 关联 before screenshot、desired screenshot、intents 和 annotations。
+- [x] 实现 `AIChangeRequest` schema。
+- [x] 根据选区收集最小组件、Fragment、binding 和源码范围。
+- [x] 关联 before screenshot、desired screenshot、intents 和 annotations。
 - [ ] 实现上下文大小预算、脱敏和扩大范围审批。
 - [ ] 建立 Conversation、Message、Attachment 和引用 ID。
 - [ ] 实现流式文本、取消、重试和错误恢复。
 - [ ] 支持“解释当前页面”“给出修改方案”只读模式。
 - [ ] 建立 50 条视觉意图理解 fixture。
+
+阶段进展（2026-07-28）：
+
+- `AIContextBuilder` 会冻结当前 Visual Draft，去重目标源码引用，合并页面、项目和安全约束，并生成 Provider 无关的 `AIChangeRequest`。
+- 面板可通过 “Prepare AI request” 显式冻结上下文；该动作只写入 `ai.context.bundle` 和 `ai.request.create` Pipeline 记录，不联系模型、不写文件。
+- 截图二进制由内存资产控制器持有，Pipeline 和 AI 请求协议仅引用可审计元数据；Provider Adapter 后续按截图 ID 解析实际附件。
 
 退出标准：
 

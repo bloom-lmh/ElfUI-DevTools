@@ -18,6 +18,7 @@ import {
   createInspectorTargetSnapshot,
   findTemplateNode,
 } from "./index.js";
+import { AIContextBuilder } from "./context.js";
 import type { DevtoolsRpcClient } from "./rpc-client.js";
 import { openSourceInEditor, type OpenSourceInEditor } from "./source.js";
 import { VisualToolsController } from "./visual.js";
@@ -477,6 +478,7 @@ export class DevtoolsPanel {
   private readonly visualToggle: HTMLButtonElement;
   private readonly inspector: ComponentInspector;
   private readonly visualTools: VisualToolsController;
+  private readonly aiContext: AIContextBuilder;
   private selectedId: string | null = null;
   private selectedTarget: InspectorTargetSnapshot | null = null;
   private selectedTemplateNodeId: string | null = null;
@@ -571,6 +573,7 @@ export class DevtoolsPanel {
       else this.visualTools.enable();
       this.setVisible(true);
       this.syncControls();
+      this.scheduleRender();
     };
     launcher.append(this.panelToggle, this.inspectorToggle, this.visualToggle);
 
@@ -607,6 +610,9 @@ export class DevtoolsPanel {
     this.visualTools = new VisualToolsController(bridge, {
       document,
       onDraftChange: () => this.scheduleRender(),
+    });
+    this.aiContext = new AIContextBuilder(bridge, this.visualTools, {
+      document,
     });
     this.document.addEventListener("keydown", this.onDocumentKeyDown, true);
     this.stop = bridge.on(() => this.scheduleRender());
@@ -680,6 +686,7 @@ export class DevtoolsPanel {
       else this.visualTools.enable();
       this.setVisible(true);
       this.syncControls();
+      this.scheduleRender();
       return;
     }
     if (event.key === "Escape" && this.visible && !this.inspector.enabled) {
@@ -1442,6 +1449,8 @@ export class DevtoolsPanel {
         visualDraft.intents.length === 1 ? "" : "s"
       } · ${visualDraft.annotations.length} annotation${
         visualDraft.annotations.length === 1 ? "" : "s"
+      } · ${visualDraft.screenshotIds.length} screenshot${
+        visualDraft.screenshotIds.length === 1 ? "" : "s"
       }`;
       const visualTool = this.document.createElement("select");
       visualTool.setAttribute("aria-label", "Visual draft tool");
@@ -1474,7 +1483,31 @@ export class DevtoolsPanel {
         this.visualTools.clear();
         this.render();
       };
-      visualSection.append(visualTitle, visualSummary, visualTool, clearVisual);
+      const prepareAIRequest = this.document.createElement("button");
+      prepareAIRequest.type = "button";
+      prepareAIRequest.textContent = "Prepare AI request";
+      prepareAIRequest.title =
+        "Freeze the current visual draft into a provider-neutral request. No model is contacted.";
+      prepareAIRequest.setAttribute("aria-label", "Prepare AI change request");
+      prepareAIRequest.disabled =
+        visualDraft.targets.length === 0 &&
+        visualDraft.intents.length === 0 &&
+        visualDraft.annotations.length === 0;
+      prepareAIRequest.onclick = () => {
+        this.aiContext.build({
+          conversationId: `conversation:${visualDraft.id}`,
+        });
+        this.activeTab = "pipeline";
+        this.persistPreferences();
+        this.render();
+      };
+      visualSection.append(
+        visualTitle,
+        visualSummary,
+        visualTool,
+        prepareAIRequest,
+        clearVisual,
+      );
       components.append(visualSection);
     }
     this.content.append(components);

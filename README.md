@@ -30,6 +30,12 @@ placed alongside the spread.
 
 In development, it injects a bottom-center launcher with separate **ElfUI DevTools**, **Component Inspector**, and **Visual Draft** buttons. The panel stays hidden until opened; choose the inspector (or press `Ctrl/Cmd+Shift+C`), then click any element inside an ElfUI component to capture its DOM identity, component ownership, template node, Fragment, and source range. Choose Visual Draft (or press `Ctrl/Cmd+Shift+V`) and drag a target to create a Ghost-only move preview: the business DOM and source remain unchanged, while a provider-neutral VisualTarget/VisualIntent is recorded in Data Pipeline. When exact template metadata is unavailable, the snapshot explicitly reports component-level or unresolved precision instead of inventing a source location. The searchable, ARIA component tree supports keyboard navigation, collapse, selection-linked details, HMR selection recovery, and virtualized rendering for large applications. The inspector can traverse open roots and ElfUI's development-only closed-root channel without weakening production encapsulation. Components, Timeline, Compiler, and Data Pipeline have persistent keyboard-accessible navigation; app filtering and system/light/dark themes are available from the header. Component details expose props, attributes, setup snapshot, exposed state, binding activity and source locations, source, compiler diagnostics, and lifecycle state. Timeline, compiler metadata, and serialized Data Pipeline records remain visible in their dedicated views. The plugin uses `apply: "serve"`, so it is absent from production builds.
 
+Rectangle, arrow, and highlight annotations live in a separate overlay layer. **Prepare AI request**
+freezes the current targets, intents, annotations, phased screenshot references, page context, source
+references, and constraints into an auditable `AIChangeRequest`; this step does not contact a model
+or write files. Screenshot bytes stay in an in-memory asset controller while Pipeline records expose
+inspectable metadata.
+
 For source locations, the compiler may attach a development-only `__elfSource` field to a component constructor:
 
 ```ts

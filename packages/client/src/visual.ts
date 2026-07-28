@@ -95,6 +95,7 @@ export class VisualIntentSession {
       targets: [],
       intents: [],
       annotations: [],
+      screenshotIds: [],
     };
   }
 
@@ -116,6 +117,7 @@ export class VisualIntentSession {
         ...(annotation.from ? { from: { ...annotation.from } } : {}),
         ...(annotation.to ? { to: { ...annotation.to } } : {}),
       })),
+      screenshotIds: [...this.draft.screenshotIds],
     };
   }
 
@@ -195,10 +197,16 @@ export class VisualIntentSession {
     return { ...annotation, targetIds: [...annotation.targetIds] };
   }
 
+  public attachScreenshot(screenshotId: string): void {
+    if (!this.draft.screenshotIds.includes(screenshotId))
+      this.draft.screenshotIds.push(screenshotId);
+  }
+
   public clear(): void {
     this.draft.targets.length = 0;
     this.draft.intents.length = 0;
     this.draft.annotations.length = 0;
+    this.draft.screenshotIds.length = 0;
     this.bridge.recordPipeline({
       taskId: this.draft.id,
       stage: "visual-intent",
@@ -297,8 +305,17 @@ export class VisualToolsController {
     return this.active;
   }
 
+  public get id(): string {
+    return this.session.id;
+  }
+
   public getDraft(): VisualDraft {
     return this.session.getDraft();
+  }
+
+  public attachScreenshot(screenshotId: string): void {
+    this.session.attachScreenshot(screenshotId);
+    this.onDraftChange?.(this.session.getDraft());
   }
 
   public get selectedTool(): VisualTool {

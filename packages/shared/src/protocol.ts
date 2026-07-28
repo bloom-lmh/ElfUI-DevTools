@@ -1,6 +1,7 @@
 export const DEVTOOLS_PROTOCOL_VERSION = 2 as const;
 export const DEVTOOLS_PIPELINE_SCHEMA_VERSION = 1 as const;
 export const DEVTOOLS_VISUAL_SCHEMA_VERSION = 1 as const;
+export const DEVTOOLS_AI_CHANGE_SCHEMA_VERSION = 1 as const;
 export const DEVTOOLS_OPEN_IN_EDITOR_ENDPOINT =
   "/__elfui_devtools/open-in-editor" as const;
 export const DEVTOOLS_COMPILER_STATE_ENDPOINT =
@@ -198,7 +199,73 @@ export interface VisualDraft {
   targets: VisualTarget[];
   intents: VisualIntent[];
   annotations: VisualAnnotation[];
-  screenshotId?: string;
+  screenshotIds: string[];
+}
+
+export type ScreenshotKind = "viewport" | "selection";
+export type ScreenshotPhase = "before" | "desired" | "result";
+
+export interface ScreenshotAsset {
+  id: string;
+  kind: ScreenshotKind;
+  phase: ScreenshotPhase;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  width: number;
+  height: number;
+  devicePixelRatio: number;
+  route: string;
+  scroll: { x: number; y: number };
+  capturedAt: number;
+  selection?: RectSnapshot;
+  excludedRegions: RectSnapshot[];
+  byteLength: number;
+}
+
+export interface ProjectContextSummary {
+  framework: "elfui";
+  frameworkVersion?: string;
+  projectName?: string;
+}
+
+export interface PageContextSummary {
+  url: string;
+  route: string;
+  title: string;
+  viewport: { width: number; height: number };
+  devicePixelRatio: number;
+  scroll: { x: number; y: number };
+}
+
+export interface SourceContextBlock {
+  id: string;
+  sourceId: string;
+  component?: string;
+  fragment?: string;
+  templateNodeId?: string;
+  range?: SourceLocation;
+  content?: string;
+}
+
+export interface AIChangeConstraints {
+  preserveResponsiveLayout: boolean;
+  preserveAccessibility: boolean;
+  preservePublicAPI: boolean;
+  allowedFiles?: string[];
+}
+
+export interface AIChangeRequest {
+  schemaVersion: typeof DEVTOOLS_AI_CHANGE_SCHEMA_VERSION;
+  id: string;
+  conversationId: string;
+  project: ProjectContextSummary;
+  page: PageContextSummary;
+  targets: VisualTarget[];
+  intents: VisualIntent[];
+  annotations: VisualAnnotation[];
+  screenshots: ScreenshotAsset[];
+  sourceContext: SourceContextBlock[];
+  userMessage?: string;
+  constraints: AIChangeConstraints;
 }
 
 export interface ComponentNodeSnapshot {

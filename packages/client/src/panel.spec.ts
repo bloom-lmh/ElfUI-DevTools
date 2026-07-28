@@ -669,6 +669,67 @@ describe("DevtoolsPanel", () => {
     rpc.dispose();
   });
 
+  it("freezes a visual draft into an auditable AI request without contacting a provider", async () => {
+    const bridge = createDevtoolsBridge({ now: () => 90 });
+    const panel = new DevtoolsPanel(bridge, document);
+    const shadow = document.querySelector<HTMLElement>(
+      "[data-elfui-devtools=host]",
+    )?.shadowRoot;
+
+    shadow
+      ?.querySelector<HTMLButtonElement>('[aria-label="Toggle Visual Draft"]')
+      ?.click();
+    const tool = await vi.waitFor(() => {
+      const element = shadow?.querySelector<HTMLSelectElement>(
+        '[aria-label="Visual draft tool"]',
+      );
+      expect(element).not.toBeNull();
+      return element;
+    });
+    if (tool) {
+      tool.value = "rectangle";
+      tool.dispatchEvent(new Event("change"));
+    }
+    document.body.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 10,
+        clientY: 20,
+      }),
+    );
+    document.body.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        button: 0,
+        clientX: 60,
+        clientY: 70,
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(
+        shadow?.querySelector<HTMLButtonElement>(
+          '[aria-label="Prepare AI change request"]',
+        )?.disabled,
+      ).toBe(false);
+    });
+    shadow
+      ?.querySelector<HTMLButtonElement>(
+        '[aria-label="Prepare AI change request"]',
+      )
+      ?.click();
+
+    const records = bridge.getPipelineState().records;
+    expect(records.map((record) => record.kind)).toContain("ai.context.bundle");
+    expect(records.map((record) => record.kind)).toContain("ai.request.create");
+    expect(
+      shadow?.querySelector('[data-elfui-devtools="pipeline-json"]')
+        ?.textContent,
+    ).toContain("ai-change:");
+    panel.dispose();
+  });
+
   it("docks, resizes, enters fullscreen, and restores persisted layout", () => {
     window.localStorage.setItem(
       DEVTOOLS_LAYOUT_STORAGE_KEY,

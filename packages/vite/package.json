@@ -6,6 +6,7 @@
   "types": "./dist/index.d.ts",
   "dependencies": {
     "@elfui/devtools-client": "workspace:*",
+    "@elfui/devtools-shared": "workspace:*",
     "launch-editor": "^2.14.1"
   },
   "peerDependencies": {

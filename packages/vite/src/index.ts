@@ -1,20 +1,60 @@
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  DEVTOOLS_COMPILER_STATE_ENDPOINT,
+  DEVTOOLS_COMPILER_UPDATE_EVENT,
+  DEVTOOLS_OPEN_IN_EDITOR_ENDPOINT,
+  DEVTOOLS_PROTOCOL_VERSION,
+  type CompilerArtifact,
+  type CompilerArtifactKind,
+  type CompilerStateSnapshot,
+} from "@elfui/devtools-shared";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import launchEditor from "launch-editor";
 import type { Plugin } from "vite";
 
-export const DEVTOOLS_OPEN_IN_EDITOR_ENDPOINT =
-  "/__elfui_devtools/open-in-editor" as const;
+export {
+  DEVTOOLS_COMPILER_STATE_ENDPOINT,
+  DEVTOOLS_COMPILER_UPDATE_EVENT,
+  DEVTOOLS_OPEN_IN_EDITOR_ENDPOINT,
+};
 
 const virtualClientId = "virtual:elfui-devtools-client";
 const resolvedVirtualClientId = `\0${virtualClientId}`;
 const virtualClientUrl = "/@id/__x00__virtual:elfui-devtools-client";
+const virtualClientAutoId = "virtual:elfui-devtools-client/auto";
+const virtualClientApiId = "virtual:elfui-devtools-client/api";
+const clientAutoEntry = fileURLToPath(
+  import.meta.resolve("@elfui/devtools-client/auto"),
+);
+const clientApiEntry = fileURLToPath(
+  import.meta.resolve("@elfui/devtools-client"),
+);
 
 export interface ElfUIDevtoolsViteOptions {
   enabled?: boolean;
   editor?: string;
   openInEditor?: (file: string, line: number, column: number) => void;
+}
+
+export interface ElfUIDevtoolsCompilerHooks {
+  onMetadata(metadata: unknown, id: string): void;
+  onDiagnostics(diagnostics: readonly unknown[], id: string): void;
+}
+
+export interface ElfUIDevtoolsVitePlugin extends Plugin {
+  /**
+   * Pass this object to `elfuiMacroPlugin()` so compiler metadata and
+   * diagnostics can be observed without compiling the source twice.
+   */
+  compiler: ElfUIDevtoolsCompilerHooks;
+}
+
+export interface CompilerArtifactStore {
+  readonly compiler: ElfUIDevtoolsCompilerHooks;
+  snapshot(): CompilerStateSnapshot;
+  onArtifact(listener: (artifact: CompilerArtifact) => void): () => void;
 }
 
 type DevtoolsMiddleware = (
@@ -30,6 +70,79 @@ const send = (
 ): void => {
   response.statusCode = statusCode;
   response.end(body);
+};
+
+const cloneForTransport = (value: unknown): unknown => {
+  try {
+    return JSON.parse(JSON.stringify(value)) as unknown;
+  } catch (error) {
+    return {
+      serializationError:
+        error instanceof Error ? error.message : String(error),
+    };
+  }
+};
+
+export const createCompilerArtifactStore = (
+  now: () => number = Date.now,
+): CompilerArtifactStore => {
+  const artifacts = new Map<string, CompilerArtifact>();
+  const listeners = new Set<(artifact: CompilerArtifact) => void>();
+  const sourceIds = new Map<string, string>();
+  let revision = 0;
+  const capture = (
+    kind: CompilerArtifactKind,
+    payload: unknown,
+    id: string,
+  ): void => {
+    const record =
+      payload !== null && typeof payload === "object"
+        ? (payload as Record<string, unknown>)
+        : null;
+    const firstDiagnostic =
+      kind === "diagnostics" && Array.isArray(payload)
+        ? payload.find(
+            (value): value is Record<string, unknown> =>
+              value !== null && typeof value === "object",
+          )
+        : null;
+    const sourceId =
+      (typeof record?.sourceId === "string" ? record.sourceId : null) ??
+      (typeof firstDiagnostic?.sourceId === "string"
+        ? firstDiagnostic.sourceId
+        : null) ??
+      sourceIds.get(id) ??
+      id;
+    if (kind === "metadata") sourceIds.set(id, sourceId);
+    const artifact: CompilerArtifact = {
+      revision: ++revision,
+      capturedAt: now(),
+      id,
+      sourceId,
+      kind,
+      payload: cloneForTransport(payload),
+    };
+    artifacts.set(`${kind}:${sourceId}`, artifact);
+    for (const listener of listeners) listener(artifact);
+  };
+  return {
+    compiler: {
+      onMetadata: (metadata, id) => capture("metadata", metadata, id),
+      onDiagnostics: (diagnostics, id) =>
+        capture("diagnostics", diagnostics, id),
+    },
+    snapshot: () => ({
+      protocolVersion: DEVTOOLS_PROTOCOL_VERSION,
+      revision,
+      artifacts: [...artifacts.values()].sort(
+        (left, right) => left.revision - right.revision,
+      ),
+    }),
+    onArtifact: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
 };
 
 const isInsideRoot = (root: string, file: string): boolean => {
@@ -103,6 +216,46 @@ export const createOpenInEditorMiddleware = (
   };
 };
 
+export const createCompilerStateMiddleware = (
+  getSnapshot: () => CompilerStateSnapshot,
+): DevtoolsMiddleware => {
+  return (request, response, next) => {
+    const url = new URL(request.url ?? "/", "http://elfui.local");
+    if (url.pathname !== DEVTOOLS_COMPILER_STATE_ENDPOINT) {
+      next();
+      return;
+    }
+    response.setHeader("content-type", "application/json; charset=utf-8");
+    response.setHeader("cache-control", "no-store");
+    send(response, 200, JSON.stringify(getSnapshot()));
+  };
+};
+
+export const createDevtoolsVirtualClient = (): string => `
+import ${JSON.stringify(virtualClientAutoId)};
+import { ingestCompilerArtifact, ingestCompilerSnapshot } from ${JSON.stringify(virtualClientApiId)};
+
+const syncElfUICompilerState = async () => {
+  try {
+    const response = await fetch(${JSON.stringify(DEVTOOLS_COMPILER_STATE_ENDPOINT)}, {
+      cache: "no-store"
+    });
+    if (!response.ok) throw new Error(\`HTTP \${response.status}\`);
+    ingestCompilerSnapshot(await response.json());
+  } catch (error) {
+    console.warn("[ElfUI DevTools] Failed to load compiler state", error);
+  }
+};
+
+void syncElfUICompilerState();
+if (import.meta.hot) {
+  import.meta.hot.on(
+    ${JSON.stringify(DEVTOOLS_COMPILER_UPDATE_EVENT)},
+    (artifact) => ingestCompilerArtifact(artifact)
+  );
+}
+`;
+
 export const createDevtoolsBootstrap = () => [
   {
     tag: "script",
@@ -113,25 +266,55 @@ export const createDevtoolsBootstrap = () => [
 
 export const elfuiDevtools = (
   options: ElfUIDevtoolsViteOptions = {},
-): Plugin => ({
-  name: "elfui-devtools",
-  apply: "serve",
-  configureServer(server) {
-    if (options.enabled === false) return;
-    server.middlewares.use(
-      createOpenInEditorMiddleware(server.config.root, options),
-    );
-  },
-  resolveId(id) {
-    return id === virtualClientId ? resolvedVirtualClientId : undefined;
-  },
-  load(id) {
-    return id === resolvedVirtualClientId
-      ? 'import "@elfui/devtools-client/auto";'
-      : undefined;
-  },
-  transformIndexHtml: () => {
-    if (options.enabled === false) return [];
-    return createDevtoolsBootstrap();
-  },
-});
+): ElfUIDevtoolsVitePlugin => {
+  const compilerStore = createCompilerArtifactStore();
+  let stopBroadcast: (() => void) | null = null;
+  const plugin: Plugin = {
+    name: "elfui-devtools",
+    apply: "serve",
+    configureServer(server) {
+      if (options.enabled === false) return;
+      server.middlewares.use(
+        createOpenInEditorMiddleware(server.config.root, options),
+      );
+      server.middlewares.use(
+        createCompilerStateMiddleware(() => compilerStore.snapshot()),
+      );
+      stopBroadcast?.();
+      stopBroadcast = compilerStore.onArtifact((artifact) => {
+        server.ws.send({
+          type: "custom",
+          event: DEVTOOLS_COMPILER_UPDATE_EVENT,
+          data: artifact,
+        });
+      });
+      server.httpServer?.once("close", () => {
+        stopBroadcast?.();
+        stopBroadcast = null;
+      });
+    },
+    resolveId(id) {
+      if (id === virtualClientId) return resolvedVirtualClientId;
+      if (id === virtualClientAutoId) return clientAutoEntry;
+      if (id === virtualClientApiId) return clientApiEntry;
+      return undefined;
+    },
+    load(id) {
+      return id === resolvedVirtualClientId
+        ? createDevtoolsVirtualClient()
+        : undefined;
+    },
+    transformIndexHtml: () => {
+      if (options.enabled === false) return [];
+      return createDevtoolsBootstrap();
+    },
+  };
+  const compiler =
+    options.enabled === false
+      ? {
+          onMetadata: () => undefined,
+          onDiagnostics: () => undefined,
+        }
+      : compilerStore.compiler;
+  return Object.assign(plugin, { compiler });
+};

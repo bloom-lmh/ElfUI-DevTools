@@ -1,15 +1,20 @@
 import type {
   ComponentDetailSnapshot,
+  CompilerArtifact,
+  CompilerStateSnapshot,
   DevtoolsSnapshot,
+  InspectorTargetSnapshot,
+  PipelineRecord,
+  PipelineStateSnapshot,
   SerializedValue,
   TimelineEvent,
   TimelineStatusSnapshot,
 } from "@elfui/devtools-shared";
 import type { ElfUIDevtoolsBridge } from "@elfui/devtools-runtime";
 
-import { ComponentInspector } from "./index";
-import type { DevtoolsRpcClient } from "./rpc-client";
-import { openSourceInEditor, type OpenSourceInEditor } from "./source";
+import { ComponentInspector } from "./index.js";
+import type { DevtoolsRpcClient } from "./rpc-client.js";
+import { openSourceInEditor, type OpenSourceInEditor } from "./source.js";
 
 export const DEVTOOLS_LAYOUT_STORAGE_KEY = "elfui-devtools:layout:v1";
 
@@ -228,11 +233,51 @@ const styles = `
   .section-title { margin: 0 0 5px; color: #94a3b8; font-weight: 600; text-transform: uppercase; }
   .timeline-actions { display: flex; gap: 4px; margin-bottom: 5px; }
   .timeline-actions button { border: 1px solid #475569; border-radius: 4px; background: #1e293b; color: #cbd5e1; cursor: pointer; }
-  .source-action { margin: 8px 0 0; border: 1px solid #0ea5e9; border-radius: 5px; padding: 4px 8px; background: #082f49; color: #bae6fd; cursor: pointer; }
-  .source-action:disabled { cursor: wait; opacity: .65; }
-  .component {
+  .pipeline-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+  .pipeline-record {
     display: block;
     width: 100%;
+    border: 1px solid #334155;
+    border-radius: 5px;
+    padding: 5px 7px;
+    background: #111c31;
+    color: #cbd5e1;
+    text-align: left;
+    cursor: pointer;
+  }
+  .pipeline-record:hover,
+  .pipeline-record[aria-pressed="true"] { border-color: #0ea5e9; background: #082f49; }
+  .pipeline-record strong { color: #7dd3fc; }
+  .pipeline-empty { margin: 0; color: #64748b; }
+  .pipeline-json { max-height: 260px; font-size: 11px; }
+  .source-action { margin: 8px 0 0; border: 1px solid #0ea5e9; border-radius: 5px; padding: 4px 8px; background: #082f49; color: #bae6fd; cursor: pointer; }
+  .source-action:disabled { cursor: wait; opacity: .65; }
+  .component-tools { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+  .component-search {
+    min-width: 0;
+    flex: 1;
+    border: 1px solid #334155;
+    border-radius: 5px;
+    padding: 4px 7px;
+    background: #111827;
+    color: #e2e8f0;
+  }
+  .component-tree { display: grid; gap: 1px; }
+  .component-row { display: flex; align-items: center; min-width: 0; }
+  .tree-toggle {
+    flex: 0 0 22px;
+    width: 22px;
+    border: 0;
+    padding: 3px 0;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+  }
+  .tree-toggle:disabled { cursor: default; opacity: .25; }
+  .component {
+    display: block;
+    min-width: 0;
+    flex: 1;
     padding: 4px 8px;
     border: 0;
     border-radius: 5px;
@@ -241,7 +286,8 @@ const styles = `
     text-align: left;
     cursor: pointer;
   }
-  .component:hover { background: #1e293b; }
+  .component:hover,
+  .component[aria-pressed="true"] { background: #1e293b; color: #7dd3fc; }
   ol { margin: 0; padding-left: 22px; color: #cbd5e1; }
   pre { margin: 8px 0 0; overflow: auto; padding: 8px; border-radius: 6px; background: #020617; white-space: pre-wrap; }
   @media (prefers-color-scheme: dark) {
@@ -271,8 +317,14 @@ export class DevtoolsPanel {
   private readonly inspectorToggle: HTMLButtonElement;
   private readonly inspector: ComponentInspector;
   private selectedId: string | null = null;
+  private selectedPipelineId: string | null = null;
+  private selectedCompilerSourceId: string | null = null;
+  private componentQuery = "";
+  private readonly collapsedComponentIds = new Set<string>();
+  private readonly componentParentIds = new Map<string, string | null>();
   private visible = false;
   private readonly stop: () => void;
+  private readonly stopPipeline: () => void;
   private renderGeneration = 0;
   private readonly storage: Storage | null;
   private dock: DockPosition;
@@ -354,13 +406,10 @@ export class DevtoolsPanel {
 
     this.inspector = new ComponentInspector(bridge, {
       document,
-      onSelect: (id) => {
-        this.selectedId = id;
-        this.setVisible(true);
-        this.render();
-      },
+      onSelect: (id, target) => this.selectComponent(id, "inspector", target),
     });
     this.stop = bridge.on(() => this.render());
+    this.stopPipeline = bridge.onPipeline(() => this.render());
     this.syncControls();
     this.render();
   }
@@ -371,6 +420,7 @@ export class DevtoolsPanel {
 
   public dispose(): void {
     this.stop();
+    this.stopPipeline();
     this.inspector.dispose();
     this.document.defaultView?.removeEventListener(
       "pointermove",
@@ -489,6 +539,36 @@ export class DevtoolsPanel {
     this.syncControls();
   }
 
+  private selectComponent(
+    id: string,
+    selectionSource: "inspector" | "component-tree",
+    target?: InspectorTargetSnapshot,
+  ): void {
+    this.selectedId = id;
+    let parentId = this.componentParentIds.get(id) ?? null;
+    while (parentId) {
+      this.collapsedComponentIds.delete(parentId);
+      parentId = this.componentParentIds.get(parentId) ?? null;
+    }
+    const detail = this.bridge.getComponentDetail(id);
+    const record = this.bridge.recordPipeline({
+      stage: "target-snapshot",
+      source: "inspector",
+      kind: target ? "element.select" : "component.select",
+      summary: detail
+        ? `${detail.displayName} selected from ${selectionSource}`
+        : `${id} selected from ${selectionSource}`,
+      payload: {
+        selectionSource,
+        component: detail,
+        ...(target ? { target } : {}),
+      },
+    });
+    this.selectedPipelineId = record.id;
+    this.setVisible(true);
+    this.render();
+  }
+
   private syncControls(): void {
     this.panelToggle.setAttribute("aria-pressed", String(this.visible));
     this.inspectorToggle.setAttribute(
@@ -508,19 +588,30 @@ export class DevtoolsPanel {
       this.selectedId ? this.bridge.getComponentDetail(this.selectedId) : null,
       this.bridge.getTimelineStatus(),
       this.bridge.getTimeline(),
+      this.bridge.getPipelineState(),
+      this.bridge.getCompilerState(),
     );
   }
 
   private async renderFromRpc(generation: number): Promise<void> {
-    const [snapshot, timeline] = await Promise.all([
+    const [snapshot, timeline, pipeline, compiler] = await Promise.all([
       this.rpc!.getSnapshot(),
       this.rpc!.getTimeline(),
+      this.rpc!.getPipeline(),
+      this.rpc!.getCompilerState(),
     ]);
     const detail = this.selectedId
       ? await this.rpc!.getComponentDetail(this.selectedId)
       : null;
     if (generation !== this.renderGeneration) return;
-    this.renderView(snapshot, detail, timeline.status, timeline.events);
+    this.renderView(
+      snapshot,
+      detail,
+      timeline.status,
+      timeline.events,
+      pipeline,
+      compiler,
+    );
   }
 
   private renderView(
@@ -528,6 +619,8 @@ export class DevtoolsPanel {
     detail: ComponentDetailSnapshot | null,
     timelineStatus: TimelineStatusSnapshot,
     timelineEvents: readonly TimelineEvent[],
+    pipelineState: PipelineStateSnapshot,
+    compilerState: CompilerStateSnapshot,
   ): void {
     this.content.replaceChildren();
 
@@ -573,29 +666,100 @@ export class DevtoolsPanel {
 
     const components = this.document.createElement("section");
     components.className = "section";
+    const componentTools = this.document.createElement("div");
+    componentTools.className = "component-tools";
     const componentsTitle = this.document.createElement("p");
     componentsTitle.className = "section-title";
     componentsTitle.textContent = "Components";
-    components.appendChild(componentsTitle);
-    for (const node of snapshot.components) {
-      let depth = 0;
-      let parentId = node.parentId;
-      while (parentId) {
-        depth += 1;
-        parentId =
-          snapshot.components.find((candidate) => candidate.id === parentId)
-            ?.parentId ?? null;
-      }
-      const button = this.document.createElement("button");
-      button.className = "component";
-      button.style.paddingLeft = `${8 + depth * 14}px`;
-      button.textContent = `<${node.tag}>`;
-      button.onclick = () => {
-        this.selectedId = node.id;
-        this.render();
+    const componentSearch = this.document.createElement("input");
+    componentSearch.className = "component-search";
+    componentSearch.type = "search";
+    componentSearch.placeholder = "Filter components";
+    componentSearch.value = this.componentQuery;
+    componentSearch.setAttribute("aria-label", "Filter components");
+    componentTools.append(componentsTitle, componentSearch);
+    components.append(componentTools);
+    const componentTree = this.document.createElement("div");
+    componentTree.className = "component-tree";
+    componentTree.dataset.elfuiDevtools = "component-tree";
+    components.append(componentTree);
+
+    const nodeById = new Map(
+      snapshot.components.map((node) => [node.id, node]),
+    );
+    this.componentParentIds.clear();
+    for (const node of snapshot.components)
+      this.componentParentIds.set(node.id, node.parentId);
+    const roots = snapshot.components.filter(
+      (node) => !node.parentId || !nodeById.has(node.parentId),
+    );
+    const renderComponentRows = (): void => {
+      componentTree.replaceChildren();
+      const query = this.componentQuery.trim().toLowerCase();
+      const matches = (id: string): boolean => {
+        const node = nodeById.get(id);
+        if (!node) return false;
+        if (
+          !query ||
+          node.tag.toLowerCase().includes(query) ||
+          node.displayName.toLowerCase().includes(query) ||
+          node.id.toLowerCase().includes(query)
+        )
+          return true;
+        return node.children.some(matches);
       };
-      components.append(button);
-    }
+      const appendNode = (id: string, depth: number): void => {
+        const node = nodeById.get(id);
+        if (!node || !matches(id)) return;
+        const row = this.document.createElement("div");
+        row.className = "component-row";
+        row.style.paddingLeft = `${depth * 14}px`;
+        const toggle = this.document.createElement("button");
+        toggle.className = "tree-toggle";
+        toggle.type = "button";
+        const collapsed = this.collapsedComponentIds.has(id);
+        toggle.textContent = node.children.length
+          ? collapsed
+            ? "▸"
+            : "▾"
+          : "·";
+        toggle.disabled = node.children.length === 0;
+        toggle.setAttribute(
+          "aria-label",
+          `${collapsed ? "Expand" : "Collapse"} <${node.tag}>`,
+        );
+        toggle.onclick = () => {
+          if (collapsed) this.collapsedComponentIds.delete(id);
+          else this.collapsedComponentIds.add(id);
+          renderComponentRows();
+        };
+        const button = this.document.createElement("button");
+        button.className = "component";
+        button.type = "button";
+        button.textContent = `<${node.tag}>`;
+        button.setAttribute(
+          "aria-pressed",
+          String(node.id === this.selectedId),
+        );
+        button.onclick = () => this.selectComponent(node.id, "component-tree");
+        row.append(toggle, button);
+        componentTree.append(row);
+        if (!collapsed || query)
+          for (const childId of node.children) appendNode(childId, depth + 1);
+      };
+      for (const root of roots) appendNode(root.id, 0);
+      if (!componentTree.childElementCount) {
+        const empty = this.document.createElement("p");
+        empty.className = "pipeline-empty";
+        empty.textContent = "No matching components.";
+        componentTree.append(empty);
+      }
+    };
+    componentSearch.oninput = () => {
+      this.componentQuery = componentSearch.value;
+      renderComponentRows();
+    };
+    renderComponentRows();
     this.content.append(components);
 
     const timelineSection = this.document.createElement("section");
@@ -656,8 +820,12 @@ export class DevtoolsPanel {
     timelineSection.append(timelineHeading, timeline);
     this.content.append(timelineSection);
 
+    this.renderCompilerState(compilerState);
+    this.renderPipeline(pipelineState);
+
     if (!detail) return;
     const detailNode = this.document.createElement("pre");
+    detailNode.dataset.elfuiDevtools = "component-detail";
     const source = detail.source
       ? `${detail.source.file}:${detail.source.line}:${detail.source.column}`
       : "unavailable";
@@ -683,5 +851,171 @@ export class DevtoolsPanel {
       };
       this.content.append(openButton);
     }
+  }
+
+  private renderPipeline(state: PipelineStateSnapshot): void {
+    const section = this.document.createElement("section");
+    section.className = "section";
+    section.dataset.elfuiDevtools = "pipeline";
+
+    const heading = this.document.createElement("div");
+    heading.className = "section-heading";
+    const title = this.document.createElement("p");
+    title.className = "section-title";
+    title.textContent = `Data pipeline (${state.records.length}${state.droppedRecords ? `, ${state.droppedRecords} evicted` : ""})`;
+    const clear = this.document.createElement("button");
+    clear.type = "button";
+    clear.textContent = "Clear";
+    clear.setAttribute("aria-label", "Clear data pipeline");
+    clear.onclick = () => {
+      this.selectedPipelineId = null;
+      if (this.rpc) {
+        void this.rpc.clearPipeline().then(() => this.render());
+      } else {
+        this.bridge.clearPipeline();
+        this.render();
+      }
+    };
+    const actions = this.document.createElement("div");
+    actions.className = "timeline-actions";
+    actions.append(clear);
+    heading.append(title, actions);
+    section.append(heading);
+
+    if (state.records.length === 0) {
+      const empty = this.document.createElement("p");
+      empty.className = "pipeline-empty";
+      empty.textContent = "No pipeline records yet.";
+      section.append(empty);
+      this.content.append(section);
+      return;
+    }
+
+    const selected: PipelineRecord =
+      state.records.find((record) => record.id === this.selectedPipelineId) ??
+      state.records.at(-1)!;
+    const list = this.document.createElement("ul");
+    list.className = "pipeline-list";
+    for (const record of state.records.slice(-12).reverse()) {
+      const item = this.document.createElement("li");
+      const button = this.document.createElement("button");
+      button.type = "button";
+      button.className = "pipeline-record";
+      button.dataset.pipelineRecordId = record.id;
+      button.setAttribute("aria-pressed", String(record.id === selected.id));
+      const stage = this.document.createElement("strong");
+      stage.textContent = record.stage;
+      button.append(
+        stage,
+        this.document.createTextNode(
+          ` · ${record.source}/${record.kind}\n${record.summary}`,
+        ),
+      );
+      button.onclick = () => {
+        this.selectedPipelineId = record.id;
+        this.render();
+      };
+      item.append(button);
+      list.append(item);
+    }
+    section.append(list);
+
+    const payload = this.document.createElement("pre");
+    payload.className = "pipeline-json";
+    payload.dataset.elfuiDevtools = "pipeline-json";
+    payload.textContent = JSON.stringify(selected, null, 2);
+    section.append(payload);
+    this.content.append(section);
+  }
+
+  private renderCompilerState(state: CompilerStateSnapshot): void {
+    const section = this.document.createElement("section");
+    section.className = "section";
+    section.dataset.elfuiDevtools = "compiler-state";
+    const title = this.document.createElement("p");
+    title.className = "section-title";
+    title.textContent = `Compiler metadata (${state.artifacts.length} artifacts, revision ${state.revision})`;
+    section.append(title);
+
+    if (state.artifacts.length === 0) {
+      const empty = this.document.createElement("p");
+      empty.className = "pipeline-empty";
+      empty.textContent =
+        "No compiler data. Pass devtools.compiler to elfuiMacroPlugin().";
+      section.append(empty);
+      this.content.append(section);
+      return;
+    }
+
+    const metadata = new Map<string, CompilerArtifact>();
+    const diagnostics = new Map<string, CompilerArtifact>();
+    for (const artifact of state.artifacts) {
+      const target = artifact.kind === "metadata" ? metadata : diagnostics;
+      target.set(artifact.sourceId, artifact);
+    }
+    const sourceIds = [...new Set([...metadata.keys(), ...diagnostics.keys()])];
+    const selectedSourceId =
+      sourceIds.find(
+        (sourceId) => sourceId === this.selectedCompilerSourceId,
+      ) ?? sourceIds[0]!;
+    const list = this.document.createElement("ul");
+    list.className = "pipeline-list";
+    for (const sourceId of sourceIds) {
+      const metadataArtifact = metadata.get(sourceId);
+      const diagnosticsArtifact = diagnostics.get(sourceId);
+      const metadataValue =
+        metadataArtifact?.payload !== null &&
+        typeof metadataArtifact?.payload === "object"
+          ? (metadataArtifact.payload as Record<string, unknown>)
+          : null;
+      const componentCount = Array.isArray(metadataValue?.components)
+        ? metadataValue.components.length
+        : 0;
+      const fragmentCount = Array.isArray(metadataValue?.fragments)
+        ? metadataValue.fragments.length
+        : 0;
+      const diagnosticCount = Array.isArray(diagnosticsArtifact?.payload)
+        ? diagnosticsArtifact.payload.length
+        : 0;
+      const item = this.document.createElement("li");
+      const button = this.document.createElement("button");
+      button.type = "button";
+      button.className = "pipeline-record";
+      button.dataset.compilerSourceId = sourceId;
+      button.setAttribute(
+        "aria-pressed",
+        String(sourceId === selectedSourceId),
+      );
+      const source = this.document.createElement("strong");
+      source.textContent = sourceId;
+      button.append(
+        source,
+        this.document.createTextNode(
+          `\n${componentCount} components · ${fragmentCount} fragments · ${diagnosticCount} diagnostics`,
+        ),
+      );
+      button.onclick = () => {
+        this.selectedCompilerSourceId = sourceId;
+        this.render();
+      };
+      item.append(button);
+      list.append(item);
+    }
+    section.append(list);
+
+    const detail = this.document.createElement("pre");
+    detail.className = "pipeline-json";
+    detail.dataset.elfuiDevtools = "compiler-json";
+    detail.textContent = JSON.stringify(
+      {
+        sourceId: selectedSourceId,
+        metadata: metadata.get(selectedSourceId) ?? null,
+        diagnostics: diagnostics.get(selectedSourceId) ?? null,
+      },
+      null,
+      2,
+    );
+    section.append(detail);
+    this.content.append(section);
   }
 }

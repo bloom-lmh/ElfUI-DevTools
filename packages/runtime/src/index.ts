@@ -1,2 +1,2 @@
-export * from "./bridge";
-export * from "./elfui-adapter";
+export * from "./bridge.js";
+export * from "./elfui-adapter.js";

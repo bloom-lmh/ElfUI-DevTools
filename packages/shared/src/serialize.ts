@@ -3,7 +3,7 @@ import type {
   SerializedCollection,
   SerializedObject,
   SerializedValue,
-} from "./protocol";
+} from "./protocol.js";
 
 export interface SerializeOptions {
   maxDepth?: number;

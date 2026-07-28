@@ -2,8 +2,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
+  DEVTOOLS_COMPILER_STATE_ENDPOINT,
+  DEVTOOLS_COMPILER_UPDATE_EVENT,
   DEVTOOLS_OPEN_IN_EDITOR_ENDPOINT,
+  createCompilerArtifactStore,
+  createCompilerStateMiddleware,
   createDevtoolsBootstrap,
+  createDevtoolsVirtualClient,
   createOpenInEditorMiddleware,
   elfuiDevtools,
 } from "./index";
@@ -33,6 +38,130 @@ describe("elfuiDevtools", () => {
       },
     ]);
     expect(elfuiDevtools({ enabled: false }).transformIndexHtml).toBeDefined();
+  });
+
+  it("resolves client entries from the plugin package in strict dependency layouts", async () => {
+    const plugin = elfuiDevtools();
+    const resolveId = plugin.resolveId;
+    const resolveVirtualId =
+      typeof resolveId === "function" ? resolveId : resolveId?.handler;
+
+    const autoEntry = await resolveVirtualId?.call(
+      {} as never,
+      "virtual:elfui-devtools-client/auto",
+      undefined,
+      {} as never,
+    );
+    const apiEntry = await resolveVirtualId?.call(
+      {} as never,
+      "virtual:elfui-devtools-client/api",
+      undefined,
+      {} as never,
+    );
+
+    expect(String(autoEntry)).toMatch(/client[\\/]dist[\\/]auto\.js$/);
+    expect(String(apiEntry)).toMatch(/client[\\/]dist[\\/]index\.js$/);
+  });
+
+  it("captures compiler metadata and diagnostics as revisioned artifacts", () => {
+    const store = createCompilerArtifactStore(() => 42);
+    const listener = vi.fn();
+    store.onArtifact(listener);
+    store.compiler.onMetadata(
+      {
+        schemaVersion: 2,
+        sourceId: "src/Card.ts",
+        components: [{ name: "Card" }],
+        fragments: [{ name: "Badge" }],
+      },
+      "/project/src/Card.ts",
+    );
+    store.compiler.onDiagnostics(
+      [{ severity: "warning", code: "ELF_TEST", message: "Check this" }],
+      "/project/src/Card.ts",
+    );
+
+    expect(store.snapshot()).toMatchObject({
+      protocolVersion: 2,
+      revision: 2,
+      artifacts: [
+        {
+          revision: 1,
+          capturedAt: 42,
+          kind: "metadata",
+          id: "/project/src/Card.ts",
+        },
+        {
+          revision: 2,
+          kind: "diagnostics",
+          id: "/project/src/Card.ts",
+        },
+      ],
+    });
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("serves compiler state and wires compiler updates into the virtual client", () => {
+    const snapshot = {
+      protocolVersion: 2 as const,
+      revision: 1,
+      artifacts: [],
+    };
+    const middleware = createCompilerStateMiddleware(() => snapshot);
+    const end = vi.fn();
+    const next = vi.fn();
+    const setHeader = vi.fn();
+    const response = {
+      statusCode: 200,
+      end,
+      setHeader,
+    } as unknown as ServerResponse;
+    middleware(
+      { url: DEVTOOLS_COMPILER_STATE_ENDPOINT } as IncomingMessage,
+      response,
+      next,
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(setHeader).toHaveBeenCalledWith("cache-control", "no-store");
+    expect(JSON.parse(String(end.mock.calls[0]?.[0]))).toEqual(snapshot);
+    const client = createDevtoolsVirtualClient();
+    expect(client).toContain("ingestCompilerSnapshot");
+    expect(client).toContain("ingestCompilerArtifact");
+    expect(client).toContain(DEVTOOLS_COMPILER_UPDATE_EVENT);
+  });
+
+  it("broadcasts compiler hook updates over Vite HMR", () => {
+    const plugin = elfuiDevtools();
+    const send = vi.fn();
+    const use = vi.fn();
+    const server = {
+      config: { root: process.cwd() },
+      middlewares: { use },
+      ws: { send },
+    } as never;
+    const configureServer = plugin.configureServer;
+    const configure =
+      typeof configureServer === "function"
+        ? configureServer
+        : configureServer?.handler;
+    configure?.call({} as never, server);
+    plugin.compiler.onMetadata(
+      { schemaVersion: 2, sourceId: "src/Hmr.ts" },
+      "/project/src/Hmr.ts",
+    );
+
+    expect(use).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "custom",
+        event: DEVTOOLS_COMPILER_UPDATE_EVENT,
+        data: expect.objectContaining({
+          kind: "metadata",
+          id: "/project/src/Hmr.ts",
+        }),
+      }),
+    );
   });
 
   it("opens an existing source file with its line and column", () => {

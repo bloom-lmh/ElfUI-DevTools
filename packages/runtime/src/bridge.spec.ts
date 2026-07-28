@@ -27,7 +27,7 @@ describe("ElfUIDevtoolsBridge", () => {
     });
 
     expect(bridge.getSnapshot()).toMatchObject({
-      protocolVersion: 1,
+      protocolVersion: 2,
       apps: [{ rootIds: [rootId] }],
       components: [
         { id: rootId, parentId: null, children: [childId] },
@@ -416,17 +416,17 @@ describe("ElfUIDevtoolsBridge", () => {
       params: {},
     });
     expect(incompatible).toMatchObject({
-      protocolVersion: 1,
+      protocolVersion: 2,
       requestId: "old-client:1",
       ok: false,
       error: {
         code: "PROTOCOL_MISMATCH",
-        data: { received: 99, supported: 1 },
+        data: { received: 99, supported: 2 },
       },
     });
 
     const invalid = bridge.handleRpcRequest({
-      protocolVersion: 1,
+      protocolVersion: 2,
       requestId: "client:2",
       method: "timeline.setPaused",
       params: { paused: "yes" },
@@ -435,6 +435,49 @@ describe("ElfUIDevtoolsBridge", () => {
       requestId: "client:2",
       ok: false,
       error: { code: "INVALID_PARAMS" },
+    });
+  });
+
+  it("records a bounded, serializable data pipeline", () => {
+    const bridge = createDevtoolsBridge({
+      now: () => 73,
+      maxPipelineRecords: 2,
+    });
+    const host = document.createElement("elf-pipeline");
+    bridge.registerComponent({ host, tag: "elf-pipeline" });
+    bridge.notifyUpdate(host);
+    const record = bridge.recordPipeline({
+      taskId: "task:style",
+      stage: "visual-intent",
+      source: "visual-tools",
+      kind: "style.preview",
+      summary: "Previewed a wider card",
+      payload: { width: 320, unit: "px" },
+    });
+
+    expect(record).toMatchObject({
+      taskId: "task:style",
+      stage: "visual-intent",
+      schemaVersion: 1,
+      source: "visual-tools",
+      kind: "style.preview",
+      payload: {
+        kind: "object",
+        entries: expect.arrayContaining([
+          { key: "width", value: { kind: "primitive", value: 320 } },
+        ]),
+      },
+    });
+    expect(bridge.getPipelineState()).toMatchObject({
+      droppedRecords: 1,
+      records: [
+        { stage: "observation", kind: "component.update" },
+        { id: record.id, stage: "visual-intent" },
+      ],
+    });
+    expect(bridge.clearPipeline()).toEqual({
+      droppedRecords: 0,
+      records: [],
     });
   });
 });

@@ -80,4 +80,50 @@ describe("installElfUIAdapter", () => {
     ]);
     adapter.disconnect();
   });
+
+  it("recursively discovers existing components inside open shadow roots", () => {
+    class ShadowParent extends HTMLElement {
+      public static __elfDefinition = {
+        tag: "elf-adapter-shadow-parent",
+        props: {},
+        shadow: "open" as const,
+      };
+      public constructor() {
+        super();
+        (this as unknown as Record<symbol, unknown>)[INSTANCE_KEY] = {};
+      }
+    }
+    class ShadowChild extends HTMLElement {
+      public static __elfDefinition = {
+        tag: "elf-adapter-shadow-child",
+        props: {},
+        shadow: "open" as const,
+      };
+      public constructor() {
+        super();
+        (this as unknown as Record<symbol, unknown>)[INSTANCE_KEY] = {};
+      }
+    }
+    customElements.define("elf-adapter-shadow-parent", ShadowParent);
+    customElements.define("elf-adapter-shadow-child", ShadowChild);
+    const parent = document.createElement("elf-adapter-shadow-parent");
+    const child = document.createElement("elf-adapter-shadow-child");
+    parent.attachShadow({ mode: "open" }).appendChild(child);
+    document.body.appendChild(parent);
+
+    const bridge = createDevtoolsBridge();
+    const adapter = installElfUIAdapter(bridge);
+    const components = bridge.getSnapshot().components;
+    const parentNode = components.find(
+      (component) => component.tag === "elf-adapter-shadow-parent",
+    );
+    const childNode = components.find(
+      (component) => component.tag === "elf-adapter-shadow-child",
+    );
+
+    expect(components).toHaveLength(2);
+    expect(childNode?.parentId).toBe(parentNode?.id);
+    expect(parentNode?.children).toEqual([childNode?.id]);
+    adapter.disconnect();
+  });
 });

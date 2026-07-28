@@ -2,6 +2,7 @@ import {
   DEVTOOLS_PROTOCOL_VERSION,
   DEVTOOLS_RPC_CAPABILITIES,
   type ComponentDetailSnapshot,
+  type CompilerStateSnapshot,
   type DevtoolsCapability,
   type DevtoolsHandshakeResult,
   type DevtoolsRpcError as DevtoolsRpcErrorPayload,
@@ -11,6 +12,7 @@ import {
   type DevtoolsRpcResult,
   type DevtoolsRpcTransport,
   type DevtoolsSnapshot,
+  type PipelineStateSnapshot,
   type TimelineStateSnapshot,
   type TimelineStatusSnapshot,
 } from "@elfui/devtools-shared";
@@ -89,6 +91,21 @@ export class DevtoolsRpcClient {
   public async clearTimeline(): Promise<TimelineStatusSnapshot> {
     this.requireCapability("timeline-control");
     return await this.request("timeline.clear", {});
+  }
+
+  public async getPipeline(): Promise<PipelineStateSnapshot> {
+    this.requireCapability("pipeline");
+    return await this.request("pipeline.list", {});
+  }
+
+  public async clearPipeline(): Promise<PipelineStateSnapshot> {
+    this.requireCapability("pipeline-control");
+    return await this.request("pipeline.clear", {});
+  }
+
+  public async getCompilerState(): Promise<CompilerStateSnapshot> {
+    this.requireCapability("compiler-state");
+    return await this.request("compiler.state", {});
   }
 
   public dispose(): void {

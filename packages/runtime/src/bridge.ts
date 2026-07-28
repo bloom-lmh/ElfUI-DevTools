@@ -1,10 +1,13 @@
 import {
   DEVTOOLS_RPC_CAPABILITIES,
+  DEVTOOLS_PIPELINE_SCHEMA_VERSION,
   DEVTOOLS_PROTOCOL_VERSION,
   serialize,
   type AppSnapshot,
   type ComponentDetailSnapshot,
   type ComponentNodeSnapshot,
+  type CompilerArtifact,
+  type CompilerStateSnapshot,
   type DevtoolsCapability,
   type DevtoolsRpcFailure,
   type DevtoolsRpcHandler,
@@ -13,6 +16,11 @@ import {
   type DevtoolsRpcSuccess,
   type DevtoolsRpcTransport,
   type DevtoolsSnapshot,
+  type PipelineDiagnostic,
+  type PipelineRecord,
+  type PipelineRecordSource,
+  type PipelineStage,
+  type PipelineStateSnapshot,
   type SerializedValue,
   type SourceLocation,
   type TimelineEvent,
@@ -84,6 +92,7 @@ interface EffectDebugInfo {
 export interface DevtoolsBridgeOptions {
   now?: () => number;
   maxTimelineEvents?: number;
+  maxPipelineRecords?: number;
   maxTimelineEventsPerWindow?: number;
   timelineWindowMs?: number;
   aggregateWindowMs?: number;
@@ -92,6 +101,18 @@ export interface DevtoolsBridgeOptions {
 export type TimelineStatus = TimelineStatusSnapshot;
 
 export type DevtoolsListener = (event: TimelineEvent) => void;
+export type PipelineListener = (record: PipelineRecord) => void;
+
+export interface PipelineRecordInput {
+  taskId?: string;
+  parentId?: string;
+  stage: PipelineStage;
+  source: PipelineRecordSource;
+  kind: string;
+  summary: string;
+  payload: unknown;
+  diagnostics?: PipelineDiagnostic[];
+}
 
 interface AppRecord {
   id: string;
@@ -133,20 +154,74 @@ const snapshotValue = (
   }
 };
 
+const objectValue = (value: unknown): Record<string, unknown> | null =>
+  value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+
+const compilerArtifactSummary = (artifact: CompilerArtifact): string => {
+  if (artifact.kind === "metadata") {
+    const metadata = objectValue(artifact.payload);
+    const components = Array.isArray(metadata?.components)
+      ? metadata.components.length
+      : 0;
+    const fragments = Array.isArray(metadata?.fragments)
+      ? metadata.fragments.length
+      : 0;
+    return `${artifact.sourceId}: ${components} component${components === 1 ? "" : "s"}, ${fragments} fragment${fragments === 1 ? "" : "s"}`;
+  }
+  const count = Array.isArray(artifact.payload) ? artifact.payload.length : 0;
+  return `${artifact.sourceId}: ${count} compiler diagnostic${count === 1 ? "" : "s"}`;
+};
+
+const compilerArtifactDiagnostics = (
+  artifact: CompilerArtifact,
+): PipelineDiagnostic[] => {
+  if (artifact.kind !== "diagnostics" || !Array.isArray(artifact.payload))
+    return [];
+  return artifact.payload.flatMap((value) => {
+    const diagnostic = objectValue(value);
+    if (!diagnostic) return [];
+    const severity =
+      diagnostic.severity === "error" || diagnostic.severity === "warning"
+        ? diagnostic.severity
+        : "info";
+    return [
+      {
+        severity,
+        code:
+          typeof diagnostic.code === "string"
+            ? diagnostic.code
+            : "ELF_COMPILER_DIAGNOSTIC",
+        message:
+          typeof diagnostic.message === "string"
+            ? diagnostic.message
+            : "Compiler diagnostic",
+      } satisfies PipelineDiagnostic,
+    ];
+  });
+};
+
 export class ElfUIDevtoolsBridge implements DevtoolsRpcHandler {
   private readonly apps = new Map<string, AppRecord>();
   private readonly components = new Map<string, ComponentRecord>();
   private readonly componentIds = new WeakMap<HTMLElement, string>();
   private readonly listeners = new Set<DevtoolsListener>();
+  private readonly pipelineListeners = new Set<PipelineListener>();
   private readonly timeline: TimelineEvent[] = [];
+  private readonly pipeline: PipelineRecord[] = [];
+  private readonly compilerArtifacts = new Map<string, CompilerArtifact>();
+  private readonly compilerMetadataRecordIds = new Map<string, string>();
   private readonly now: () => number;
   private readonly maxTimelineEvents: number;
+  private readonly maxPipelineRecords: number;
   private readonly maxTimelineEventsPerWindow: number;
   private readonly timelineWindowMs: number;
   private readonly aggregateWindowMs: number;
   private timelinePaused = false;
   private droppedTimelineEvents = 0;
   private aggregatedTimelineEvents = 0;
+  private droppedPipelineRecords = 0;
   private timelineWindowStartedAt = 0;
   private timelineWindowEventCount = 0;
   private lastAggregationKey: string | null = null;
@@ -154,10 +229,12 @@ export class ElfUIDevtoolsBridge implements DevtoolsRpcHandler {
   private nextAppId = 1;
   private nextComponentId = 1;
   private nextEventId = 1;
+  private nextPipelineRecordId = 1;
 
   public constructor(options: DevtoolsBridgeOptions = {}) {
     this.now = options.now ?? Date.now;
     this.maxTimelineEvents = options.maxTimelineEvents ?? 1000;
+    this.maxPipelineRecords = options.maxPipelineRecords ?? 500;
     this.maxTimelineEventsPerWindow = options.maxTimelineEventsPerWindow ?? 500;
     this.timelineWindowMs = options.timelineWindowMs ?? 1000;
     this.aggregateWindowMs = options.aggregateWindowMs ?? 16;
@@ -428,6 +505,83 @@ export class ElfUIDevtoolsBridge implements DevtoolsRpcHandler {
     this.lastAggregationCount = 1;
   }
 
+  public recordPipeline(input: PipelineRecordInput): PipelineRecord {
+    const record: PipelineRecord = {
+      id: `pipeline:${this.nextPipelineRecordId++}`,
+      taskId: input.taskId ?? "session:observation",
+      ...(input.parentId ? { parentId: input.parentId } : {}),
+      stage: input.stage,
+      schemaVersion: DEVTOOLS_PIPELINE_SCHEMA_VERSION,
+      at: this.now(),
+      source: input.source,
+      kind: input.kind,
+      summary: input.summary,
+      payload: serialize(input.payload),
+      diagnostics: [...(input.diagnostics ?? [])],
+    };
+    this.pipeline.push(record);
+    if (this.pipeline.length > this.maxPipelineRecords) {
+      const removed = this.pipeline.length - this.maxPipelineRecords;
+      this.pipeline.splice(0, removed);
+      this.droppedPipelineRecords += removed;
+    }
+    for (const listener of this.pipelineListeners) listener(record);
+    return record;
+  }
+
+  public getPipelineState(): PipelineStateSnapshot {
+    return {
+      droppedRecords: this.droppedPipelineRecords,
+      records: [...this.pipeline],
+    };
+  }
+
+  public clearPipeline(): PipelineStateSnapshot {
+    this.pipeline.length = 0;
+    this.droppedPipelineRecords = 0;
+    return this.getPipelineState();
+  }
+
+  public ingestCompilerArtifact(artifact: CompilerArtifact): void {
+    if (!Number.isSafeInteger(artifact.revision) || artifact.revision < 1)
+      return;
+    const key = `${artifact.kind}:${artifact.sourceId}`;
+    const existing = this.compilerArtifacts.get(key);
+    if (existing && existing.revision >= artifact.revision) return;
+    this.compilerArtifacts.set(key, artifact);
+    const record = this.recordPipeline({
+      taskId: `compile:${artifact.sourceId}`,
+      ...(artifact.kind === "diagnostics" &&
+      this.compilerMetadataRecordIds.has(artifact.sourceId)
+        ? {
+            parentId: this.compilerMetadataRecordIds.get(artifact.sourceId)!,
+          }
+        : {}),
+      stage: "observation",
+      source: "compiler",
+      kind: `compiler.${artifact.kind}`,
+      summary: compilerArtifactSummary(artifact),
+      payload: artifact,
+      diagnostics: compilerArtifactDiagnostics(artifact),
+    });
+    if (artifact.kind === "metadata")
+      this.compilerMetadataRecordIds.set(artifact.sourceId, record.id);
+  }
+
+  public getCompilerState(): CompilerStateSnapshot {
+    const artifacts = [...this.compilerArtifacts.values()].sort(
+      (left, right) => left.revision - right.revision,
+    );
+    return {
+      protocolVersion: DEVTOOLS_PROTOCOL_VERSION,
+      revision: artifacts.reduce(
+        (latest, artifact) => Math.max(latest, artifact.revision),
+        0,
+      ),
+      artifacts,
+    };
+  }
+
   public handleRpcRequest(request: DevtoolsRpcRequest): DevtoolsRpcResponse {
     const requestId =
       typeof request.requestId === "string" && request.requestId
@@ -513,6 +667,12 @@ export class ElfUIDevtoolsBridge implements DevtoolsRpcHandler {
         case "timeline.clear":
           this.clearTimeline();
           return this.rpcSuccess(requestId, this.getTimelineStatus());
+        case "pipeline.list":
+          return this.rpcSuccess(requestId, this.getPipelineState());
+        case "pipeline.clear":
+          return this.rpcSuccess(requestId, this.clearPipeline());
+        case "compiler.state":
+          return this.rpcSuccess(requestId, this.getCompilerState());
         default:
           return this.rpcFailure(
             requestId,
@@ -532,6 +692,11 @@ export class ElfUIDevtoolsBridge implements DevtoolsRpcHandler {
   public on(listener: DevtoolsListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  public onPipeline(listener: PipelineListener): () => void {
+    this.pipelineListeners.add(listener);
+    return () => this.pipelineListeners.delete(listener);
   }
 
   private createApp(label: string): string {
@@ -589,11 +754,18 @@ export class ElfUIDevtoolsBridge implements DevtoolsRpcHandler {
   }
 
   private emit(event: Omit<TimelineEvent, "id" | "at">): void {
+    const at = this.now();
+    this.recordPipeline({
+      stage: "observation",
+      source: "runtime",
+      kind: `${event.layer}.${event.type}`,
+      summary: event.summary,
+      payload: { at, ...event },
+    });
     if (this.timelinePaused) {
       this.droppedTimelineEvents += 1;
       return;
     }
-    const at = this.now();
     if (at - this.timelineWindowStartedAt >= this.timelineWindowMs) {
       this.timelineWindowStartedAt = at;
       this.timelineWindowEventCount = 0;

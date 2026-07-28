@@ -1,0 +1,107 @@
+import { resolve } from "node:path";
+import { elfuiMacroPlugin } from "@elfui/vite-plugin";
+import { describe, expect, it, vi } from "vitest";
+
+import { DEVTOOLS_COMPILER_UPDATE_EVENT, elfuiDevtools } from "./index";
+
+describe("ElfUI beta.13 compiler integration", () => {
+  it("captures real Metadata v2, Fragment source ownership, and diagnostics", () => {
+    const devtools = elfuiDevtools();
+    const send = vi.fn();
+    const server = {
+      config: { root: process.cwd() },
+      middlewares: { use: vi.fn() },
+      ws: { send },
+    } as never;
+    const configureServer = devtools.configureServer;
+    const configure =
+      typeof configureServer === "function"
+        ? configureServer
+        : configureServer?.handler;
+    configure?.call({} as never, server);
+    const compiler = elfuiMacroPlugin({
+      ...devtools.compiler,
+      projectRoot: process.cwd(),
+      templateTypeCheck: false,
+    });
+    compiler.configResolved?.({ root: process.cwd() });
+
+    const id = resolve(process.cwd(), "fixtures/MetadataProbe.ts");
+    const result = compiler.transform?.(
+      `/// <!-- @elf component -->
+import { defineFragment, defineHtml } from "@elfui/core";
+
+interface BadgeProps {
+  label: string;
+}
+
+const Badge = defineFragment<BadgeProps>(
+  ({ label }) => \`<span class="badge">\${label}</span>\`
+);
+
+export const MetadataProbe = defineHtml(\`
+  <article>
+    <Badge label="ready" />
+  </article>
+\`);
+`,
+      id,
+    );
+
+    expect(result?.code).toContain("MetadataProbe");
+    const updates = send.mock.calls.map(
+      ([message]) =>
+        (
+          message as {
+            event: string;
+            data: { kind: string; payload: unknown };
+          }
+        ).data,
+    );
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(
+      send.mock.calls.every(
+        ([message]) =>
+          (message as { event: string }).event ===
+          DEVTOOLS_COMPILER_UPDATE_EVENT,
+      ),
+    ).toBe(true);
+
+    const metadata = updates.find((artifact) => artifact.kind === "metadata")
+      ?.payload as {
+      schemaVersion: number;
+      sourceId: string;
+      components: Array<{
+        name: string;
+        source: { line: number; column: number };
+      }>;
+      fragments: Array<{
+        name: string;
+        ownerComponents: string[];
+        identity: string;
+        source: { line: number; column: number };
+      }>;
+    };
+    expect(metadata).toMatchObject({
+      schemaVersion: 2,
+      sourceId: "fixtures/MetadataProbe.ts",
+      components: [
+        {
+          name: "elf-metadata-probe",
+          source: { line: expect.any(Number), column: expect.any(Number) },
+        },
+      ],
+      fragments: [
+        {
+          name: "Badge",
+          ownerComponents: ["elf-metadata-probe"],
+          identity: "not-applicable",
+          source: { line: expect.any(Number), column: expect.any(Number) },
+        },
+      ],
+    });
+    expect(
+      updates.find((artifact) => artifact.kind === "diagnostics")?.payload,
+    ).toEqual([]);
+  });
+});

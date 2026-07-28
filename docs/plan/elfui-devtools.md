@@ -1,5 +1,8 @@
 # ElfUI DevTools 对标 Vue 3 DevTools 开发计划
 
+> 历史计划：保留传统 DevTools 能力对标和实现证据。当前产品执行计划已经调整为
+> [ElfUI AI DevTools 实施计划](./elfui-ai-devtools.md)，后续阶段和优先级以新计划为准。
+
 > 调研基线：Vue DevTools 8.1.x（Vue 3）
 >
 > 计划更新时间：2026-07-15

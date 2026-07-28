@@ -3,13 +3,49 @@ import {
   createInPageDevtoolsTransport,
   installElfUIAdapter,
   installGlobalDevtoolsBridge,
+  type ElfUIDevtoolsBridge,
 } from "@elfui/devtools-runtime";
+import {
+  DEVTOOLS_PROTOCOL_VERSION,
+  type CompilerArtifact,
+  type CompilerStateSnapshot,
+} from "@elfui/devtools-shared";
 
-import { DevtoolsPanel } from "./panel";
-import { DevtoolsRpcClient } from "./rpc-client";
+import { DevtoolsPanel } from "./panel.js";
+import { DevtoolsRpcClient } from "./rpc-client.js";
+
+let activeBridge: ElfUIDevtoolsBridge | null = null;
+const pendingCompilerArtifacts: CompilerArtifact[] = [];
+
+export const ingestCompilerArtifact = (artifact: CompilerArtifact): void => {
+  if (!activeBridge) {
+    pendingCompilerArtifacts.push(artifact);
+    return;
+  }
+  activeBridge.ingestCompilerArtifact(artifact);
+};
+
+export const ingestCompilerSnapshot = (
+  snapshot: CompilerStateSnapshot,
+): void => {
+  if (
+    snapshot.protocolVersion !== DEVTOOLS_PROTOCOL_VERSION ||
+    !Array.isArray(snapshot.artifacts)
+  )
+    return;
+  for (const artifact of [...snapshot.artifacts].sort(
+    (left, right) => left.revision - right.revision,
+  )) {
+    ingestCompilerArtifact(artifact);
+  }
+};
 
 export const installElfUIDevtools = (): (() => void) => {
   const bridge = createDevtoolsBridge();
+  activeBridge = bridge;
+  for (const artifact of pendingCompilerArtifacts.splice(0)) {
+    bridge.ingestCompilerArtifact(artifact);
+  }
   const uninstallGlobal = installGlobalDevtoolsBridge(bridge);
   const adapter = installElfUIAdapter(bridge);
   const rpc = new DevtoolsRpcClient(createInPageDevtoolsTransport(bridge));
@@ -30,5 +66,6 @@ export const installElfUIDevtools = (): (() => void) => {
     rpc.dispose();
     adapter.disconnect();
     uninstallGlobal();
+    if (activeBridge === bridge) activeBridge = null;
   };
 };

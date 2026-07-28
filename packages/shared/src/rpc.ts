@@ -1,9 +1,11 @@
 import type {
   ComponentDetailSnapshot,
+  CompilerStateSnapshot,
   DEVTOOLS_PROTOCOL_VERSION,
   DevtoolsSnapshot,
+  PipelineRecord,
   TimelineEvent,
-} from "./protocol";
+} from "./protocol.js";
 
 export const DEVTOOLS_RPC_CAPABILITIES = [
   "component-tree",
@@ -11,6 +13,9 @@ export const DEVTOOLS_RPC_CAPABILITIES = [
   "timeline",
   "timeline-control",
   "reactivity-timeline",
+  "pipeline",
+  "pipeline-control",
+  "compiler-state",
 ] as const;
 
 export type DevtoolsCapability = (typeof DEVTOOLS_RPC_CAPABILITIES)[number];
@@ -38,6 +43,11 @@ export interface TimelineStateSnapshot {
   events: TimelineEvent[];
 }
 
+export interface PipelineStateSnapshot {
+  droppedRecords: number;
+  records: PipelineRecord[];
+}
+
 export interface DevtoolsRpcMethodMap {
   "protocol.handshake": {
     params: DevtoolsHandshakeParams;
@@ -59,6 +69,18 @@ export interface DevtoolsRpcMethodMap {
   "timeline.clear": {
     params: Record<string, never>;
     result: TimelineStatusSnapshot;
+  };
+  "pipeline.list": {
+    params: Record<string, never>;
+    result: PipelineStateSnapshot;
+  };
+  "pipeline.clear": {
+    params: Record<string, never>;
+    result: PipelineStateSnapshot;
+  };
+  "compiler.state": {
+    params: Record<string, never>;
+    result: CompilerStateSnapshot;
   };
 }
 

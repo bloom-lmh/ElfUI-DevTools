@@ -25,7 +25,7 @@ describe("DevtoolsRpcClient", () => {
 
     const handshake = await client.connect();
     expect(handshake).toMatchObject({
-      protocolVersion: 1,
+      protocolVersion: 2,
       serverName: "@elfui/devtools-runtime",
       negotiatedCapabilities: ["component-tree", "component-detail"],
     });
@@ -49,6 +49,14 @@ describe("DevtoolsRpcClient", () => {
     bridge.registerComponent({ host, tag: "elf-rpc-timeline" });
     const client = new DevtoolsRpcClient(createInPageDevtoolsTransport(bridge));
     await client.connect();
+    bridge.ingestCompilerArtifact({
+      revision: 1,
+      capturedAt: 10,
+      id: "/project/src/Counter.ts",
+      sourceId: "src/Counter.ts",
+      kind: "metadata",
+      payload: { schemaVersion: 2, sourceId: "src/Counter.ts" },
+    });
 
     await client.setTimelinePaused(true);
     bridge.notifyUpdate(host);
@@ -61,6 +69,29 @@ describe("DevtoolsRpcClient", () => {
     expect(await client.getTimeline()).toMatchObject({
       status: { paused: true, droppedEvents: 0, aggregatedEvents: 0 },
       events: [],
+    });
+
+    expect(await client.getPipeline()).toMatchObject({
+      records: expect.arrayContaining([
+        expect.objectContaining({
+          stage: "observation",
+          kind: "component.update",
+        }),
+      ]),
+    });
+    expect(await client.clearPipeline()).toEqual({
+      droppedRecords: 0,
+      records: [],
+    });
+    expect(await client.getCompilerState()).toMatchObject({
+      protocolVersion: 2,
+      revision: 1,
+      artifacts: [
+        {
+          sourceId: "src/Counter.ts",
+          kind: "metadata",
+        },
+      ],
     });
   });
 });

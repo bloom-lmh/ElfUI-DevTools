@@ -1,5 +1,5 @@
-import type { DevtoolsComponentInput } from "./bridge";
-import type { ElfUIDevtoolsBridge } from "./bridge";
+import type { DevtoolsComponentInput } from "./bridge.js";
+import type { ElfUIDevtoolsBridge } from "./bridge.js";
 import type { SourceLocation } from "@elfui/devtools-shared";
 
 const INSTANCE_KEY = Symbol.for("elfui.instance");
@@ -100,15 +100,16 @@ const visit = (
   callback: (host: HTMLElement) => void,
   onUnresolvedCustomElement?: (host: HTMLElement) => void,
 ): void => {
-  if (isElfUIHost(root)) callback(root);
-  else if (root instanceof HTMLElement && root.localName.includes("-"))
-    onUnresolvedCustomElement?.(root);
-  for (const element of Array.from(
-    (root as ParentNode).querySelectorAll?.("*") ?? [],
-  )) {
+  const elements: Element[] = [
+    ...(root instanceof Element ? [root] : []),
+    ...Array.from((root as ParentNode).querySelectorAll?.("*") ?? []),
+  ];
+  for (const element of elements) {
     if (isElfUIHost(element)) callback(element);
     else if (element instanceof HTMLElement && element.localName.includes("-"))
       onUnresolvedCustomElement?.(element);
+    if (element.shadowRoot)
+      visit(element.shadowRoot, callback, onUnresolvedCustomElement);
   }
 };
 

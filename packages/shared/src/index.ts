@@ -1,3 +1,3 @@
-export * from "./protocol";
-export * from "./rpc";
-export * from "./serialize";
+export * from "./protocol.js";
+export * from "./rpc.js";
+export * from "./serialize.js";

@@ -1,3 +1,3 @@
-import { installElfUIDevtools } from "./bootstrap";
+import { installElfUIDevtools } from "./bootstrap.js";
 
 installElfUIDevtools();

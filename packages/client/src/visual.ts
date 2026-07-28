@@ -8,7 +8,10 @@ import {
   type VisualRelation,
   type VisualTarget,
 } from "@elfui/devtools-shared";
-import type { ElfUIDevtoolsBridge } from "@elfui/devtools-runtime";
+import {
+  getElfUIRenderRoot,
+  type ElfUIDevtoolsBridge,
+} from "@elfui/devtools-runtime";
 import {
   createInspectorTargetSnapshot,
   createVisualTargetSnapshot,
@@ -255,6 +258,7 @@ export class VisualToolsController {
   private tool: VisualTool = "move";
   private drag: VisualDragState | null = null;
   private annotation: VisualAnnotationState | null = null;
+  private readonly observedClosedRoots = new Set<ShadowRoot>();
 
   public constructor(
     private readonly bridge: ElfUIDevtoolsBridge,
@@ -311,6 +315,7 @@ export class VisualToolsController {
     if (this.active) return;
     this.active = true;
     this.overlay.style.display = "block";
+    this.syncClosedRootListeners();
     this.document.addEventListener("pointerdown", this.onPointerDown, true);
     this.document.addEventListener("pointermove", this.onPointerMove, true);
     this.document.addEventListener("pointerup", this.onPointerUp, true);
@@ -326,6 +331,12 @@ export class VisualToolsController {
     this.document.removeEventListener("pointerdown", this.onPointerDown, true);
     this.document.removeEventListener("pointermove", this.onPointerMove, true);
     this.document.removeEventListener("pointerup", this.onPointerUp, true);
+    for (const root of this.observedClosedRoots) {
+      root.removeEventListener("pointerdown", this.onPointerDown, true);
+      root.removeEventListener("pointermove", this.onPointerMove, true);
+      root.removeEventListener("pointerup", this.onPointerUp, true);
+    }
+    this.observedClosedRoots.clear();
   }
 
   public clear(): void {
@@ -338,6 +349,29 @@ export class VisualToolsController {
   public dispose(): void {
     this.disable();
     this.overlay.remove();
+  }
+
+  private syncClosedRootListeners(): void {
+    const next = new Set<ShadowRoot>();
+    for (const component of this.bridge.getSnapshot().components) {
+      const host = this.bridge.getComponentHost(component.id);
+      if (!host) continue;
+      const root = getElfUIRenderRoot(host);
+      if (!(root instanceof ShadowRoot) || host.shadowRoot === root) continue;
+      next.add(root);
+      if (this.observedClosedRoots.has(root)) continue;
+      root.addEventListener("pointerdown", this.onPointerDown, true);
+      root.addEventListener("pointermove", this.onPointerMove, true);
+      root.addEventListener("pointerup", this.onPointerUp, true);
+    }
+    for (const root of this.observedClosedRoots)
+      if (!next.has(root)) {
+        root.removeEventListener("pointerdown", this.onPointerDown, true);
+        root.removeEventListener("pointermove", this.onPointerMove, true);
+        root.removeEventListener("pointerup", this.onPointerUp, true);
+      }
+    this.observedClosedRoots.clear();
+    for (const root of next) this.observedClosedRoots.add(root);
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {

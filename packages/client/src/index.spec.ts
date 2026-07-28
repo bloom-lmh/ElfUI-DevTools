@@ -6,7 +6,11 @@ import {
   type TemplateNodeDebugInfo,
 } from "@elfui/devtools-shared";
 
-import { ComponentInspector, findTemplateNode } from "./index";
+import {
+  ComponentInspector,
+  createVisualTargetSnapshot,
+  findTemplateNode,
+} from "./index";
 
 const TEMPLATE_NODE_REGISTRY_KEY = Symbol.for(
   "elfui.devtools.template-node-registry",
@@ -144,6 +148,60 @@ describe("ComponentInspector", () => {
       fragment: "CardActions",
     });
     inspector.dispose();
+  });
+
+  it("captures a provider-neutral visual target without mutating the page", () => {
+    const bridge = createDevtoolsBridge();
+    const host = document.createElement("elf-card");
+    const shadow = host.attachShadow({ mode: "open" });
+    const button = document.createElement("button");
+    shadow.append(button);
+    document.body.append(host);
+    const componentId = bridge.registerComponent({
+      host,
+      tag: "elf-card",
+      props: () => ({ tone: "primary" }),
+      source: { file: "src/Card.ts", line: 1, column: 1 },
+    });
+    const marker: TemplateNodeDebugInfo = {
+      sourceId: "src/Card.ts",
+      templateNodeId: "src/Card.ts:component:button:4:3",
+      source: { file: "src/Card.ts", line: 4, column: 3 },
+    };
+    installTemplateNodeRegistry(new WeakMap([[button, marker]]));
+    const bounds = {
+      x: 12,
+      y: 20,
+      width: 120,
+      height: 40,
+    };
+    vi.spyOn(button, "getBoundingClientRect").mockReturnValue(
+      bounds as DOMRect,
+    );
+    const before = button.outerHTML;
+    const target = createVisualTargetSnapshot(
+      bridge,
+      componentId,
+      button,
+      host,
+    );
+
+    expect(target).toMatchObject({
+      id: `visual-target:${componentId}:${marker.templateNodeId}`,
+      runtimeNodeId: marker.templateNodeId,
+      componentId,
+      geometry: bounds,
+      source: {
+        sourceId: marker.sourceId,
+        templateNodeId: marker.templateNodeId,
+        range: marker.source,
+      },
+      props: {
+        kind: "object",
+        entries: [{ key: "tone", value: { value: "primary" } }],
+      },
+    });
+    expect(button.outerHTML).toBe(before);
   });
 
   it("reads registry metadata when the node Symbol mirror cannot be defined", () => {

@@ -5,6 +5,7 @@ import {
 import {
   ELFUI_TEMPLATE_NODE_DEBUG_KEY,
   type InspectorTargetSnapshot,
+  type VisualTarget,
   type SourceLocation,
   type TemplateNodeDebugInfo,
 } from "@elfui/devtools-shared";
@@ -190,6 +191,74 @@ export const createInspectorTargetSnapshot = (
           sourceId: marker.sourceId,
           templateNodeId: marker.templateNodeId,
           ...(marker.fragment ? { fragment: marker.fragment } : {}),
+        }
+      : {}),
+  };
+};
+
+const visualTargetId = (
+  componentId: string,
+  target: InspectorTargetSnapshot,
+): string =>
+  `visual-target:${componentId}:${target.templateNodeId ?? target.domPath}`;
+
+export const createVisualTargetSnapshot = (
+  bridge: ElfUIDevtoolsBridge,
+  componentId: string,
+  target: Element,
+  host: HTMLElement,
+): VisualTarget => {
+  const inspector = createInspectorTargetSnapshot(
+    bridge,
+    componentId,
+    target,
+    host,
+  );
+  const bounds = target.getBoundingClientRect();
+  const styles = target.ownerDocument.defaultView?.getComputedStyle(target);
+  const detail = bridge.getComponentDetail(componentId);
+  return {
+    id: visualTargetId(componentId, inspector),
+    runtimeNodeId: inspector.templateNodeId ?? inspector.domPath,
+    componentId,
+    inspector,
+    ...(inspector.source
+      ? {
+          source: {
+            sourceId:
+              inspector.sourceId ??
+              inspector.source.file ??
+              "runtime-unresolved",
+            ...(inspector.fragment ? { fragment: inspector.fragment } : {}),
+            ...(inspector.templateNodeId
+              ? { templateNodeId: inspector.templateNodeId }
+              : {}),
+            range: inspector.source,
+          },
+        }
+      : {}),
+    geometry: {
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+    },
+    ...(styles
+      ? {
+          computedStyle: {
+            display: styles.display,
+            position: styles.position,
+            margin: styles.margin,
+            padding: styles.padding,
+            width: styles.width,
+            height: styles.height,
+          },
+        }
+      : {}),
+    ...(detail
+      ? {
+          props: detail.props,
+          bindings: detail.bindings.map((binding) => ({ ...binding })),
         }
       : {}),
   };
@@ -445,3 +514,8 @@ export {
   DevtoolsRpcClientError,
   type DevtoolsRpcClientOptions,
 } from "./rpc-client.js";
+export { VisualIntentSession, VisualToolsController } from "./visual.js";
+export type {
+  VisualIntentSessionOptions,
+  VisualToolsControllerOptions,
+} from "./visual.js";

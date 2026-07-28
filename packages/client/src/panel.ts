@@ -20,6 +20,7 @@ import {
 } from "./index.js";
 import type { DevtoolsRpcClient } from "./rpc-client.js";
 import { openSourceInEditor, type OpenSourceInEditor } from "./source.js";
+import { VisualToolsController } from "./visual.js";
 
 export const DEVTOOLS_LAYOUT_STORAGE_KEY = "elfui-devtools:layout:v1";
 export const DEVTOOLS_PREFERENCES_STORAGE_KEY = "elfui-devtools:preferences:v1";
@@ -351,6 +352,9 @@ const styles = `
   .detail-list li[data-severity="error"] { border-color: #f87171; }
   .detail-list li[data-severity="warning"] { border-color: #fbbf24; }
   .detail-list small { display: block; color: #94a3b8; }
+  .visual-draft { margin-top: 9px; border: 1px solid #7c2d12; border-radius: 7px; padding: 7px; background: #1c1917; }
+  .visual-draft .section-title { color: #fdba74; }
+  .visual-draft p { margin: 0; color: #fed7aa; }
   .source-action { margin: 8px 0 0; border: 1px solid #0ea5e9; border-radius: 5px; padding: 4px 8px; background: #082f49; color: #bae6fd; cursor: pointer; }
   .source-action:disabled { cursor: wait; opacity: .65; }
   .component-tools { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
@@ -470,7 +474,9 @@ export class DevtoolsPanel {
   private readonly resizeHandle: HTMLDivElement;
   private readonly panelToggle: HTMLButtonElement;
   private readonly inspectorToggle: HTMLButtonElement;
+  private readonly visualToggle: HTMLButtonElement;
   private readonly inspector: ComponentInspector;
+  private readonly visualTools: VisualToolsController;
   private selectedId: string | null = null;
   private selectedTarget: InspectorTargetSnapshot | null = null;
   private selectedTemplateNodeId: string | null = null;
@@ -550,7 +556,23 @@ export class DevtoolsPanel {
       else this.inspector.enable();
       this.syncControls();
     };
-    launcher.append(this.panelToggle, this.inspectorToggle);
+    this.visualToggle = document.createElement("button");
+    this.visualToggle.className = "visual";
+    this.visualToggle.type = "button";
+    this.visualToggle.textContent = "✎";
+    this.visualToggle.title = "Toggle Visual Draft";
+    this.visualToggle.setAttribute("aria-label", "Toggle Visual Draft");
+    this.visualToggle.setAttribute(
+      "aria-keyshortcuts",
+      "Control+Shift+V Meta+Shift+V",
+    );
+    this.visualToggle.onclick = () => {
+      if (this.visualTools.enabled) this.visualTools.disable();
+      else this.visualTools.enable();
+      this.setVisible(true);
+      this.syncControls();
+    };
+    launcher.append(this.panelToggle, this.inspectorToggle, this.visualToggle);
 
     this.panel = document.createElement("div");
     this.panel.className = "panel";
@@ -582,6 +604,10 @@ export class DevtoolsPanel {
       onSelect: (id, target) => this.selectComponent(id, "inspector", target),
       onEnabledChange: () => this.syncControls(),
     });
+    this.visualTools = new VisualToolsController(bridge, {
+      document,
+      onDraftChange: () => this.scheduleRender(),
+    });
     this.document.addEventListener("keydown", this.onDocumentKeyDown, true);
     this.stop = bridge.on(() => this.scheduleRender());
     this.stopPipeline = bridge.onPipeline(() => this.scheduleRender());
@@ -599,6 +625,7 @@ export class DevtoolsPanel {
     if (this.selectionRecoveryTimer !== null)
       this.document.defaultView?.clearTimeout(this.selectionRecoveryTimer);
     this.inspector.dispose();
+    this.visualTools.dispose();
     this.document.removeEventListener("keydown", this.onDocumentKeyDown, true);
     this.document.defaultView?.removeEventListener(
       "pointermove",
@@ -641,6 +668,18 @@ export class DevtoolsPanel {
       event.preventDefault();
       if (this.inspector.enabled) this.inspector.disable();
       else this.inspector.enable();
+      return;
+    }
+    if (
+      event.key.toLowerCase() === "v" &&
+      event.shiftKey &&
+      (event.ctrlKey || event.metaKey)
+    ) {
+      event.preventDefault();
+      if (this.visualTools.enabled) this.visualTools.disable();
+      else this.visualTools.enable();
+      this.setVisible(true);
+      this.syncControls();
       return;
     }
     if (event.key === "Escape" && this.visible && !this.inspector.enabled) {
@@ -823,6 +862,10 @@ export class DevtoolsPanel {
     this.inspectorToggle.setAttribute(
       "aria-pressed",
       String(this.inspector?.enabled ?? false),
+    );
+    this.visualToggle.setAttribute(
+      "aria-pressed",
+      String(this.visualTools?.enabled ?? false),
     );
   }
 
@@ -1379,6 +1422,37 @@ export class DevtoolsPanel {
     };
     componentTree.onscroll = renderVirtualWindow;
     renderComponentRows();
+    const visualDraft = this.visualTools.getDraft();
+    if (
+      visualDraft.targets.length ||
+      visualDraft.intents.length ||
+      visualDraft.annotations.length
+    ) {
+      const visualSection = this.document.createElement("section");
+      visualSection.className = "visual-draft";
+      visualSection.dataset.elfuiDevtools = "visual-draft";
+      const visualTitle = this.document.createElement("p");
+      visualTitle.className = "section-title";
+      visualTitle.textContent = "Visual draft";
+      const visualSummary = this.document.createElement("p");
+      visualSummary.textContent = `${visualDraft.targets.length} target${
+        visualDraft.targets.length === 1 ? "" : "s"
+      } · ${visualDraft.intents.length} intent${
+        visualDraft.intents.length === 1 ? "" : "s"
+      } · ${visualDraft.annotations.length} annotation${
+        visualDraft.annotations.length === 1 ? "" : "s"
+      }`;
+      const clearVisual = this.document.createElement("button");
+      clearVisual.type = "button";
+      clearVisual.textContent = "Clear visual draft";
+      clearVisual.setAttribute("aria-label", "Clear visual draft");
+      clearVisual.onclick = () => {
+        this.visualTools.clear();
+        this.render();
+      };
+      visualSection.append(visualTitle, visualSummary, clearVisual);
+      components.append(visualSection);
+    }
     this.content.append(components);
 
     const timelineSection = this.document.createElement("section");

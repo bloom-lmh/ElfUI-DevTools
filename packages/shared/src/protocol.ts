@@ -1,5 +1,6 @@
 export const DEVTOOLS_PROTOCOL_VERSION = 2 as const;
 export const DEVTOOLS_PIPELINE_SCHEMA_VERSION = 1 as const;
+export const DEVTOOLS_VISUAL_SCHEMA_VERSION = 1 as const;
 export const DEVTOOLS_OPEN_IN_EDITOR_ENDPOINT =
   "/__elfui_devtools/open-in-editor" as const;
 export const DEVTOOLS_COMPILER_STATE_ENDPOINT =
@@ -102,6 +103,102 @@ export interface InspectorTargetSnapshot {
   sourceId?: string;
   templateNodeId?: string;
   fragment?: string;
+}
+
+export interface RectSnapshot {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface VisualSourceReference {
+  sourceId: string;
+  component?: string;
+  fragment?: string;
+  templateNodeId?: string;
+  range?: SourceLocation;
+}
+
+export interface VisualTarget {
+  id: string;
+  runtimeNodeId: string;
+  componentId: string;
+  inspector: InspectorTargetSnapshot;
+  source?: VisualSourceReference;
+  geometry: RectSnapshot;
+  computedStyle?: Record<string, string>;
+  props?: SerializedValue;
+  bindings?: ComponentBindingSnapshot[];
+}
+
+export type VisualRelationType =
+  | "inside"
+  | "before"
+  | "after"
+  | "left-of"
+  | "right-of"
+  | "align-with"
+  | "near";
+
+export interface VisualRelation {
+  type: VisualRelationType;
+  targetId: string;
+}
+
+export type VisualIntent =
+  | {
+      id: string;
+      type: "style";
+      targetId: string;
+      before: Record<string, string>;
+      desired: Record<string, string>;
+    }
+  | {
+      id: string;
+      type: "move";
+      targetId: string;
+      before: RectSnapshot;
+      desired: RectSnapshot;
+      relations: VisualRelation[];
+    }
+  | {
+      id: string;
+      type: "resize";
+      targetId: string;
+      before: RectSnapshot;
+      desired: RectSnapshot;
+    }
+  | {
+      id: string;
+      type: "remove" | "duplicate";
+      targetId: string;
+    };
+
+export type VisualAnnotationType =
+  | "comment"
+  | "rectangle"
+  | "arrow"
+  | "highlight";
+
+export interface VisualAnnotation {
+  id: string;
+  type: VisualAnnotationType;
+  targetIds: string[];
+  text?: string;
+  geometry?: RectSnapshot;
+  from?: { x: number; y: number };
+  to?: { x: number; y: number };
+  createdAt: number;
+}
+
+export interface VisualDraft {
+  schemaVersion: typeof DEVTOOLS_VISUAL_SCHEMA_VERSION;
+  id: string;
+  targets: VisualTarget[];
+  intents: VisualIntent[];
+  annotations: VisualAnnotation[];
+  screenshotId?: string;
 }
 
 export interface ComponentNodeSnapshot {

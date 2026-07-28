@@ -2,6 +2,7 @@ import {
   DEVTOOLS_VISUAL_SCHEMA_VERSION,
   type RectSnapshot,
   type VisualAnnotation,
+  type VisualAnnotationType,
   type VisualDraft,
   type VisualIntent,
   type VisualRelation,
@@ -22,6 +23,8 @@ export interface VisualToolsControllerOptions {
   document?: Document;
   onDraftChange?: (draft: VisualDraft) => void;
 }
+
+export type VisualTool = "move" | Exclude<VisualAnnotationType, "comment">;
 
 const copyRect = (rect: RectSnapshot): RectSnapshot => ({ ...rect });
 
@@ -234,13 +237,24 @@ interface VisualDragState {
   pointerY: number;
 }
 
+interface VisualAnnotationState {
+  type: Exclude<VisualAnnotationType, "comment">;
+  startX: number;
+  startY: number;
+  targetIds: string[];
+  targetGeometry?: RectSnapshot;
+}
+
 export class VisualToolsController {
   private readonly document: Document;
   private readonly session: VisualIntentSession;
   private readonly overlay: HTMLDivElement;
   private readonly ghost: HTMLDivElement;
+  private readonly annotationLayer: HTMLDivElement;
   private active = false;
+  private tool: VisualTool = "move";
   private drag: VisualDragState | null = null;
+  private annotation: VisualAnnotationState | null = null;
 
   public constructor(
     private readonly bridge: ElfUIDevtoolsBridge,
@@ -253,6 +267,10 @@ export class VisualToolsController {
     this.overlay.setAttribute("aria-hidden", "true");
     this.overlay.style.cssText =
       "position:fixed;inset:0;z-index:2147483645;display:none;pointer-events:none";
+    this.annotationLayer = this.document.createElement("div");
+    this.annotationLayer.dataset.elfuiDevtools = "visual-annotation-layer";
+    this.annotationLayer.style.cssText =
+      "position:fixed;inset:0;pointer-events:none";
     this.ghost = this.document.createElement("div");
     this.ghost.dataset.elfuiDevtools = "visual-ghost";
     this.ghost.style.cssText = [
@@ -264,7 +282,7 @@ export class VisualToolsController {
       "background:rgb(249 115 22 / 12%)",
       "pointer-events:none",
     ].join(";");
-    this.overlay.append(this.ghost);
+    this.overlay.append(this.annotationLayer, this.ghost);
     this.document.body.append(this.overlay);
     this.onDraftChange = options.onDraftChange;
   }
@@ -277,6 +295,16 @@ export class VisualToolsController {
 
   public getDraft(): VisualDraft {
     return this.session.getDraft();
+  }
+
+  public get selectedTool(): VisualTool {
+    return this.tool;
+  }
+
+  public setTool(tool: VisualTool): void {
+    this.tool = tool;
+    this.drag = null;
+    this.annotation = null;
   }
 
   public enable(): void {
@@ -292,6 +320,7 @@ export class VisualToolsController {
     if (!this.active) return;
     this.active = false;
     this.drag = null;
+    this.annotation = null;
     this.overlay.style.display = "none";
     this.ghost.style.display = "none";
     this.document.removeEventListener("pointerdown", this.onPointerDown, true);
@@ -302,6 +331,7 @@ export class VisualToolsController {
   public clear(): void {
     this.session.clear();
     this.ghost.style.display = "none";
+    this.annotationLayer.replaceChildren();
     this.onDraftChange?.(this.session.getDraft());
   }
 
@@ -315,63 +345,144 @@ export class VisualToolsController {
     const target = firstElement(event);
     if (!target) return;
     const host = hostForTarget(this.bridge, target);
-    if (!host) return;
-    const componentId = this.bridge.getComponentId(host);
-    if (!componentId) return;
-    const inspector = createInspectorTargetSnapshot(
-      this.bridge,
-      componentId,
-      target,
-      host,
-    );
-    const visualTarget = createVisualTargetSnapshot(
-      this.bridge,
-      componentId,
-      target,
-      host,
-    );
-    const before = { ...visualTarget.geometry };
-    this.session.captureTarget(visualTarget);
-    this.drag = {
-      targetId: visualTarget.id,
-      before,
-      pointerX: event.clientX,
-      pointerY: event.clientY,
-    };
-    this.ghost.dataset.targetId = visualTarget.id;
-    this.ghost.dataset.sourcePrecision = inspector.sourcePrecision;
-    this.positionGhost(before);
+    const componentId = host ? this.bridge.getComponentId(host) : null;
+    const visualTarget =
+      host && componentId
+        ? createVisualTargetSnapshot(this.bridge, componentId, target, host)
+        : null;
+    if (visualTarget) this.session.captureTarget(visualTarget);
+    if (this.tool === "move") {
+      if (!visualTarget) return;
+      const inspector = createInspectorTargetSnapshot(
+        this.bridge,
+        componentId!,
+        target,
+        host!,
+      );
+      this.drag = {
+        targetId: visualTarget.id,
+        before: { ...visualTarget.geometry },
+        pointerX: event.clientX,
+        pointerY: event.clientY,
+      };
+      this.ghost.dataset.targetId = visualTarget.id;
+      this.ghost.dataset.sourcePrecision = inspector.sourcePrecision;
+      this.positionGhost(visualTarget.geometry);
+    } else {
+      if (this.tool === "highlight" && !visualTarget) return;
+      this.annotation = {
+        type: this.tool,
+        startX: event.clientX,
+        startY: event.clientY,
+        targetIds: visualTarget ? [visualTarget.id] : [],
+        ...(visualTarget ? { targetGeometry: visualTarget.geometry } : {}),
+      };
+      this.ghost.dataset.tool = this.tool;
+      if (this.tool === "highlight" && visualTarget)
+        this.positionGhost(visualTarget.geometry);
+      else
+        this.positionGhost({
+          x: event.clientX,
+          y: event.clientY,
+          width: 0,
+          height: 0,
+        });
+    }
     event.preventDefault();
     event.stopPropagation();
     this.onDraftChange?.(this.session.getDraft());
   };
 
   private readonly onPointerMove = (event: PointerEvent): void => {
-    if (!this.drag) return;
-    const desired = {
-      ...this.drag.before,
-      x: this.drag.before.x + event.clientX - this.drag.pointerX,
-      y: this.drag.before.y + event.clientY - this.drag.pointerY,
-    };
-    this.positionGhost(desired);
+    if (this.drag) {
+      const desired = {
+        ...this.drag.before,
+        x: this.drag.before.x + event.clientX - this.drag.pointerX,
+        y: this.drag.before.y + event.clientY - this.drag.pointerY,
+      };
+      this.positionGhost(desired);
+    } else if (this.annotation && this.annotation.type !== "highlight") {
+      this.positionGhost(
+        this.annotationRect(
+          this.annotation.startX,
+          this.annotation.startY,
+          event.clientX,
+          event.clientY,
+        ),
+      );
+    } else return;
     event.preventDefault();
     event.stopPropagation();
   };
 
   private readonly onPointerUp = (event: PointerEvent): void => {
-    if (!this.drag) return;
-    const desired = {
-      ...this.drag.before,
-      x: this.drag.before.x + event.clientX - this.drag.pointerX,
-      y: this.drag.before.y + event.clientY - this.drag.pointerY,
-    };
-    this.session.previewMove(this.drag.targetId, desired);
-    this.drag = null;
-    this.positionGhost(desired);
+    if (this.drag) {
+      const desired = {
+        ...this.drag.before,
+        x: this.drag.before.x + event.clientX - this.drag.pointerX,
+        y: this.drag.before.y + event.clientY - this.drag.pointerY,
+      };
+      this.session.previewMove(this.drag.targetId, desired);
+      this.drag = null;
+      this.positionGhost(desired);
+    } else if (this.annotation) {
+      const annotation = this.annotation;
+      if (annotation.type === "highlight" && annotation.targetGeometry) {
+        this.session.addAnnotation({
+          id: `annotation:${this.session.id}:${this.now()}`,
+          type: "highlight",
+          targetIds: annotation.targetIds,
+          geometry: annotation.targetGeometry,
+          createdAt: this.now(),
+        });
+      } else if (annotation.type === "arrow") {
+        this.session.addAnnotation({
+          id: `annotation:${this.session.id}:${this.now()}`,
+          type: "arrow",
+          targetIds: annotation.targetIds,
+          from: { x: annotation.startX, y: annotation.startY },
+          to: { x: event.clientX, y: event.clientY },
+          createdAt: this.now(),
+        });
+      } else {
+        this.session.addAnnotation({
+          id: `annotation:${this.session.id}:${this.now()}`,
+          type: "rectangle",
+          targetIds: annotation.targetIds,
+          geometry: this.annotationRect(
+            annotation.startX,
+            annotation.startY,
+            event.clientX,
+            event.clientY,
+          ),
+          createdAt: this.now(),
+        });
+      }
+      this.annotation = null;
+      this.renderAnnotations();
+    } else return;
     event.preventDefault();
     event.stopPropagation();
     this.onDraftChange?.(this.session.getDraft());
   };
+
+  private now(): number {
+    return Date.now();
+  }
+
+  private annotationRect(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+  ): RectSnapshot {
+    return {
+      x: Math.min(startX, endX),
+      y: Math.min(startY, endY),
+      width: Math.abs(endX - startX),
+      height: Math.abs(endY - startY),
+    };
+  }
 
   private positionGhost(rect: RectSnapshot): void {
     this.ghost.style.left = `${rect.x}px`;
@@ -379,5 +490,43 @@ export class VisualToolsController {
     this.ghost.style.width = `${rect.width}px`;
     this.ghost.style.height = `${rect.height}px`;
     this.ghost.style.display = "block";
+  }
+
+  private renderAnnotations(): void {
+    this.annotationLayer.replaceChildren();
+    for (const annotation of this.session.getDraft().annotations) {
+      const marker = this.document.createElement("div");
+      marker.dataset.annotationId = annotation.id;
+      marker.dataset.annotationType = annotation.type;
+      marker.style.position = "fixed";
+      marker.style.pointerEvents = "none";
+      marker.style.boxSizing = "border-box";
+      if (annotation.geometry) {
+        marker.style.left = `${annotation.geometry.x}px`;
+        marker.style.top = `${annotation.geometry.y}px`;
+        marker.style.width = `${annotation.geometry.width}px`;
+        marker.style.height = `${annotation.geometry.height}px`;
+        marker.style.border =
+          annotation.type === "highlight"
+            ? "2px solid #facc15"
+            : "2px solid #ef4444";
+        marker.style.background =
+          annotation.type === "highlight"
+            ? "rgb(250 204 21 / 12%)"
+            : "rgb(239 68 68 / 8%)";
+      } else if (annotation.from && annotation.to) {
+        const dx = annotation.to.x - annotation.from.x;
+        const dy = annotation.to.y - annotation.from.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        marker.style.left = `${annotation.from.x}px`;
+        marker.style.top = `${annotation.from.y}px`;
+        marker.style.width = `${length}px`;
+        marker.style.height = "0";
+        marker.style.borderTop = "2px solid #ef4444";
+        marker.style.transformOrigin = "0 0";
+        marker.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+      }
+      this.annotationLayer.append(marker);
+    }
   }
 }

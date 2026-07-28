@@ -1424,6 +1424,7 @@ export class DevtoolsPanel {
     renderComponentRows();
     const visualDraft = this.visualTools.getDraft();
     if (
+      this.visualTools.enabled ||
       visualDraft.targets.length ||
       visualDraft.intents.length ||
       visualDraft.annotations.length
@@ -1442,6 +1443,29 @@ export class DevtoolsPanel {
       } · ${visualDraft.annotations.length} annotation${
         visualDraft.annotations.length === 1 ? "" : "s"
       }`;
+      const visualTool = this.document.createElement("select");
+      visualTool.setAttribute("aria-label", "Visual draft tool");
+      for (const [value, label] of [
+        ["move", "Move (Ghost)"],
+        ["rectangle", "Rectangle"],
+        ["arrow", "Arrow"],
+        ["highlight", "Highlight"],
+      ] as const) {
+        const option = this.document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        visualTool.append(option);
+      }
+      visualTool.value = this.visualTools.selectedTool;
+      visualTool.onchange = () => {
+        if (
+          visualTool.value === "move" ||
+          visualTool.value === "rectangle" ||
+          visualTool.value === "arrow" ||
+          visualTool.value === "highlight"
+        )
+          this.visualTools.setTool(visualTool.value);
+      };
       const clearVisual = this.document.createElement("button");
       clearVisual.type = "button";
       clearVisual.textContent = "Clear visual draft";
@@ -1450,7 +1474,7 @@ export class DevtoolsPanel {
         this.visualTools.clear();
         this.render();
       };
-      visualSection.append(visualTitle, visualSummary, clearVisual);
+      visualSection.append(visualTitle, visualSummary, visualTool, clearVisual);
       components.append(visualSection);
     }
     this.content.append(components);

@@ -454,7 +454,7 @@ PatchProposal、文件 hash 和用户批准记录。
 
 - [ ] 新增 `packages/visual-intent`。
 - [x] 实现 VisualTarget、VisualIntent、Annotation schema 和序列化测试。
-- [ ] 实现 Overlay/Ghost/Annotation 三层画布。
+- [x] 实现 Overlay/Ghost/Annotation 三层画布。
 - [x] 实现不修改业务 DOM 的 Ghost 移动预览，并将 target capture、move preview 和 annotation 写入 Data Pipeline。
 - [ ] 实现样式 Preview CSS layer。
 - [ ] 实现 Ghost 移动、缩放和语义关系候选。

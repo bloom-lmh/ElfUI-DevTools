@@ -131,4 +131,46 @@ describe("VisualIntentSession", () => {
     ).toContain("left: 15px");
     controller.dispose();
   });
+
+  it("adds a rectangle annotation without changing the page", () => {
+    const bridge = createDevtoolsBridge();
+    const controller = new VisualToolsController(bridge, { document });
+    controller.setTool("rectangle");
+    controller.enable();
+    const businessNode = document.createElement("p");
+    businessNode.textContent = "Business content";
+    document.body.append(businessNode);
+    const before = businessNode.outerHTML;
+    document.body.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 30,
+        clientY: 40,
+      }),
+    );
+    document.body.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        button: 0,
+        clientX: 90,
+        clientY: 100,
+      }),
+    );
+
+    expect(controller.getDraft().annotations).toMatchObject([
+      {
+        type: "rectangle",
+        targetIds: [],
+        geometry: { x: 30, y: 40, width: 60, height: 60 },
+      },
+    ]);
+    expect(
+      document.querySelector(
+        "[data-elfui-devtools=visual-annotation-layer] [data-annotation-type=rectangle]",
+      ),
+    ).not.toBeNull();
+    expect(businessNode.outerHTML).toBe(before);
+    controller.dispose();
+  });
 });

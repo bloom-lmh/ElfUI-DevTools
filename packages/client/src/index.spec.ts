@@ -1,13 +1,33 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createDevtoolsBridge } from "@elfui/devtools-runtime";
-import { ELFUI_TEMPLATE_NODE_DEBUG_KEY } from "@elfui/devtools-shared";
+import {
+  ELFUI_TEMPLATE_NODE_DEBUG_KEY,
+  type TemplateNodeDebugInfo,
+} from "@elfui/devtools-shared";
 
-import { ComponentInspector } from "./index";
+import { ComponentInspector, findTemplateNode } from "./index";
+
+const TEMPLATE_NODE_REGISTRY_KEY = Symbol.for(
+  "elfui.devtools.template-node-registry",
+);
+
+const installTemplateNodeRegistry = (
+  registry: WeakMap<Node, TemplateNodeDebugInfo>,
+): void => {
+  Object.defineProperty(globalThis, TEMPLATE_NODE_REGISTRY_KEY, {
+    value: registry,
+    configurable: true,
+  });
+};
 
 describe("ComponentInspector", () => {
   afterEach(() => {
     document.body.replaceChildren();
+    delete (globalThis as unknown as Record<symbol, unknown>)[
+      TEMPLATE_NODE_REGISTRY_KEY
+    ];
+    vi.restoreAllMocks();
   });
 
   it("selects a registered Custom Element across a shadow root", () => {
@@ -123,6 +143,123 @@ describe("ComponentInspector", () => {
       templateNodeId: "src/Card.ts:button:4:3",
       fragment: "CardActions",
     });
+    inspector.dispose();
+  });
+
+  it("reads registry metadata when the node Symbol mirror cannot be defined", () => {
+    const bridge = createDevtoolsBridge();
+    const host = document.createElement("elf-native-select");
+    const selectElement = document.createElement("select");
+    host.attachShadow({ mode: "open" }).append(selectElement);
+    document.body.append(host);
+    const componentId = bridge.registerComponent({
+      host,
+      tag: "elf-native-select",
+    });
+    const marker: TemplateNodeDebugInfo = {
+      sourceId: "src/NativeSelect.ts",
+      templateNodeId: "src/NativeSelect.ts:component:select:8:3",
+      source: { file: "src/NativeSelect.ts", line: 8, column: 3 },
+    };
+    const registry = new WeakMap<Node, TemplateNodeDebugInfo>();
+    registry.set(selectElement, marker);
+    installTemplateNodeRegistry(registry);
+
+    const originalDefineProperty = Object.defineProperty;
+    const defineProperty = vi
+      .spyOn(Object, "defineProperty")
+      .mockImplementation((target, key, descriptor) => {
+        if (
+          target === selectElement &&
+          key === Symbol.for(ELFUI_TEMPLATE_NODE_DEBUG_KEY)
+        )
+          throw new TypeError("Symbol descriptors are unavailable");
+        return originalDefineProperty(target, key, descriptor);
+      });
+    expect(() =>
+      Object.defineProperty(
+        selectElement,
+        Symbol.for(ELFUI_TEMPLATE_NODE_DEBUG_KEY),
+        { value: marker },
+      ),
+    ).toThrow("Symbol descriptors are unavailable");
+    defineProperty.mockRestore();
+
+    const select = vi.fn();
+    const inspector = new ComponentInspector(bridge, { onSelect: select });
+    inspector.enable();
+    selectElement.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, composed: true }),
+    );
+    selectElement.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }),
+    );
+
+    expect(select).toHaveBeenCalledWith(
+      componentId,
+      expect.objectContaining({
+        sourcePrecision: "template-node",
+        templateNodeId: marker.templateNodeId,
+        source: marker.source,
+      }),
+    );
+    inspector.dispose();
+  });
+
+  it("finds a template node from the registry before the legacy mirror", () => {
+    const host = document.createElement("elf-registry-card");
+    const button = document.createElement("button");
+    host.attachShadow({ mode: "open" }).append(button);
+    const registryMarker: TemplateNodeDebugInfo = {
+      sourceId: "src/RegistryCard.ts",
+      templateNodeId: "src/RegistryCard.ts:component:button:5:3",
+      source: { file: "src/RegistryCard.ts", line: 5, column: 3 },
+    };
+    const registry = new WeakMap<Node, TemplateNodeDebugInfo>();
+    registry.set(button, registryMarker);
+    installTemplateNodeRegistry(registry);
+    (button as unknown as Record<symbol, unknown>)[
+      Symbol.for(ELFUI_TEMPLATE_NODE_DEBUG_KEY)
+    ] = {
+      ...registryMarker,
+      templateNodeId: "legacy-template-node",
+    };
+
+    expect(findTemplateNode(host, registryMarker.templateNodeId)).toBe(button);
+    expect(findTemplateNode(host, "legacy-template-node")).toBeNull();
+  });
+
+  it("coalesces hover layout work into one animation frame", () => {
+    const callbacks: FrameRequestCallback[] = [];
+    const requestFrame = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      });
+    const bridge = createDevtoolsBridge();
+    const host = document.createElement("elf-frame-card");
+    const button = document.createElement("button");
+    host.attachShadow({ mode: "open" }).append(button);
+    document.body.append(host);
+    bridge.registerComponent({ host, tag: "elf-frame-card" });
+    const readBounds = vi.spyOn(button, "getBoundingClientRect");
+    const inspector = new ComponentInspector(bridge);
+    inspector.enable();
+
+    for (let index = 0; index < 5; index += 1)
+      button.dispatchEvent(
+        new PointerEvent("pointermove", { bubbles: true, composed: true }),
+      );
+
+    expect(requestFrame).toHaveBeenCalledOnce();
+    expect(readBounds).not.toHaveBeenCalled();
+    callbacks[0]?.(performance.now());
+    expect(readBounds).toHaveBeenCalledOnce();
     inspector.dispose();
   });
 

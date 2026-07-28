@@ -4,6 +4,31 @@ import type { SourceLocation } from "@elfui/devtools-shared";
 
 const INSTANCE_KEY = Symbol.for("elfui.instance");
 const APP_ID_KEY = Symbol.for("elfui.app.id");
+const RENDER_ROOT_KEY = Symbol.for("elfui.devtools.render-root");
+const RENDER_ROOT_REGISTRY_KEY = Symbol.for(
+  "elfui.devtools.render-root-registry",
+);
+
+type WeakRegistry<K extends object, V> = Pick<WeakMap<K, V>, "get" | "set">;
+
+const isWeakRegistry = <K extends object, V>(
+  value: unknown,
+): value is WeakRegistry<K, V> =>
+  !!value &&
+  typeof value === "object" &&
+  typeof (value as { get?: unknown }).get === "function" &&
+  typeof (value as { set?: unknown }).set === "function";
+
+const renderRootRegistry = (): WeakRegistry<HTMLElement, ShadowRoot> | null => {
+  try {
+    const value = (globalThis as unknown as Record<symbol, unknown>)[
+      RENDER_ROOT_REGISTRY_KEY
+    ];
+    return isWeakRegistry<HTMLElement, ShadowRoot>(value) ? value : null;
+  } catch {
+    return null;
+  }
+};
 
 interface ElfUIDefinition {
   tag?: string;
@@ -60,6 +85,29 @@ const attributes = (host: HTMLElement): Record<string, string> =>
     ]),
   );
 
+export const getElfUIRenderRoot = (
+  host: HTMLElement,
+): ShadowRoot | HTMLElement | null => {
+  const registry = renderRootRegistry();
+  if (registry) {
+    try {
+      const root = registry.get(host);
+      if (root instanceof ShadowRoot) return root;
+    } catch {
+      // Fall through to the beta.14 compatibility mirror.
+    }
+  }
+  try {
+    const instrumented = (host as unknown as Record<symbol, unknown>)[
+      RENDER_ROOT_KEY
+    ];
+    if (instrumented instanceof ShadowRoot) return instrumented;
+  } catch {
+    // Fall through to the native open-root channel.
+  }
+  return host.shadowRoot ?? host;
+};
+
 const inputFor = (host: HTMLElement): DevtoolsComponentInput => {
   const definition = (host.constructor as ElfUIConstructor).__elfDefinition!;
   const source = (host.constructor as ElfUIConstructor).__elfSource;
@@ -108,8 +156,11 @@ const visit = (
     if (isElfUIHost(element)) callback(element);
     else if (element instanceof HTMLElement && element.localName.includes("-"))
       onUnresolvedCustomElement?.(element);
-    if (element.shadowRoot)
-      visit(element.shadowRoot, callback, onUnresolvedCustomElement);
+    if (element instanceof HTMLElement) {
+      const renderRoot = getElfUIRenderRoot(element);
+      if (renderRoot instanceof ShadowRoot)
+        visit(renderRoot, callback, onUnresolvedCustomElement);
+    }
   }
 };
 

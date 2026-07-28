@@ -9,14 +9,16 @@
     "build": "tsc -b packages/shared packages/runtime packages/client packages/vite && node scripts/verify-dist.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:browser": "pnpm build && node scripts/verify-browser-gate.mjs",
+    "test:large-tree": "vitest run packages/client/src/large-tree.spec.ts",
     "lint": "eslint .",
     "format:check": "prettier . --check",
     "format": "prettier . --write",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test"
   },
   "devDependencies": {
-    "@elfui/core": "0.1.0-beta.13",
-    "@elfui/vite-plugin": "0.1.0-beta.13",
+    "@elfui/core": "0.1.0-beta.15",
+    "@elfui/vite-plugin": "0.1.0-beta.15",
     "@eslint/js": "9.39.1",
     "@types/node": "24.10.1",
     "eslint": "9.39.1",

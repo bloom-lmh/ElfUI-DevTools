@@ -1,4 +1,7 @@
-import type { ElfUIDevtoolsBridge } from "@elfui/devtools-runtime";
+import {
+  getElfUIRenderRoot,
+  type ElfUIDevtoolsBridge,
+} from "@elfui/devtools-runtime";
 import {
   ELFUI_TEMPLATE_NODE_DEBUG_KEY,
   type InspectorTargetSnapshot,
@@ -9,7 +12,14 @@ import {
 export interface ComponentInspectorOptions {
   document?: Document;
   onSelect?: (componentId: string, target: InspectorTargetSnapshot) => void;
+  onEnabledChange?: (enabled: boolean) => void;
 }
+
+type WeakRegistry<K extends object, V> = Pick<WeakMap<K, V>, "get" | "set">;
+
+const TEMPLATE_NODE_REGISTRY_KEY = Symbol.for(
+  "elfui.devtools.template-node-registry",
+);
 
 const findRegisteredHost = (
   bridge: ElfUIDevtoolsBridge,
@@ -56,15 +66,59 @@ const isTemplateNodeDebugInfo = (
   );
 };
 
+const isWeakRegistry = <K extends object, V>(
+  value: unknown,
+): value is WeakRegistry<K, V> =>
+  !!value &&
+  typeof value === "object" &&
+  typeof (value as { get?: unknown }).get === "function" &&
+  typeof (value as { set?: unknown }).set === "function";
+
+const templateNodeRegistry = (): WeakRegistry<
+  Node,
+  TemplateNodeDebugInfo
+> | null => {
+  try {
+    const value = (globalThis as unknown as Record<symbol, unknown>)[
+      TEMPLATE_NODE_REGISTRY_KEY
+    ];
+    return isWeakRegistry<Node, TemplateNodeDebugInfo>(value) ? value : null;
+  } catch {
+    return null;
+  }
+};
+
+const readTemplateNodeDebugInfo = (
+  node: Node,
+  registry: WeakRegistry<Node, TemplateNodeDebugInfo> | null,
+  mirrorKey: symbol,
+): TemplateNodeDebugInfo | null => {
+  if (registry) {
+    try {
+      const value = registry.get(node);
+      if (isTemplateNodeDebugInfo(value)) return value;
+    } catch {
+      // Fall through to the beta.14 compatibility mirror.
+    }
+  }
+  try {
+    const value = (node as unknown as Record<symbol, unknown>)[mirrorKey];
+    return isTemplateNodeDebugInfo(value) ? value : null;
+  } catch {
+    return null;
+  }
+};
+
 const templateNodeDebugInfo = (
   target: Element,
   host: HTMLElement,
 ): TemplateNodeDebugInfo | null => {
+  const registry = templateNodeRegistry();
   const key = Symbol.for(ELFUI_TEMPLATE_NODE_DEBUG_KEY);
   let current: Element | null = target;
   while (current) {
-    const value = (current as unknown as Record<symbol, unknown>)[key];
-    if (isTemplateNodeDebugInfo(value)) return value;
+    const value = readTemplateNodeDebugInfo(current, registry, key);
+    if (value) return value;
     if (current === host) break;
     current = parentElementAcrossShadow(current);
   }
@@ -101,7 +155,7 @@ const sourceWithFile = (
   sourceId: string,
 ): SourceLocation => ({ ...source, file: source.file || sourceId });
 
-const snapshotTarget = (
+export const createInspectorTargetSnapshot = (
   bridge: ElfUIDevtoolsBridge,
   componentId: string,
   target: Element,
@@ -141,24 +195,67 @@ const snapshotTarget = (
   };
 };
 
+export const findTemplateNode = (
+  host: HTMLElement,
+  templateNodeId: string,
+): Element | null => {
+  const root = getElfUIRenderRoot(host);
+  if (!root) return null;
+  const registry = templateNodeRegistry();
+  const key = Symbol.for(ELFUI_TEMPLATE_NODE_DEBUG_KEY);
+  const candidates: Element[] = [
+    ...(root instanceof Element ? [root] : []),
+    ...Array.from(root.querySelectorAll("*")),
+  ];
+  return (
+    candidates.find((candidate) => {
+      const marker = readTemplateNodeDebugInfo(candidate, registry, key);
+      return marker?.templateNodeId === templateNodeId;
+    }) ?? null
+  );
+};
+
 const firstElement = (event: Event): Element | null =>
   event
     .composedPath()
     .find((target): target is Element => target instanceof Element) ?? null;
 
+interface InspectorHoverCandidate {
+  target: Element;
+  host: HTMLElement;
+  componentId: string;
+}
+
 export class ComponentInspector {
   private readonly document: Document;
   private readonly overlay: HTMLDivElement;
+  private readonly requestFrame: (callback: FrameRequestCallback) => number;
+  private readonly cancelFrame: (handle: number) => void;
   private hoveredId: string | null = null;
   private hoveredElement: Element | null = null;
   private hoveredTarget: InspectorTargetSnapshot | null = null;
+  private pendingHover: InspectorHoverCandidate | null = null;
+  private hoverPending = false;
+  private hoverFrame: number | null = null;
   private active = false;
+  private readonly observedClosedRoots = new Set<ShadowRoot>();
+  private readonly stopBridge: () => void;
 
   public constructor(
     private readonly bridge: ElfUIDevtoolsBridge,
     private readonly options: ComponentInspectorOptions = {},
   ) {
     this.document = options.document ?? document;
+    const view = this.document.defaultView;
+    this.requestFrame = view?.requestAnimationFrame
+      ? view.requestAnimationFrame.bind(view)
+      : (callback) => {
+          queueMicrotask(() => callback(performance.now()));
+          return -1;
+        };
+    this.cancelFrame = view?.cancelAnimationFrame
+      ? view.cancelAnimationFrame.bind(view)
+      : () => undefined;
     this.overlay = this.document.createElement("div");
     this.overlay.setAttribute("aria-hidden", "true");
     this.overlay.style.cssText = [
@@ -171,6 +268,9 @@ export class ComponentInspector {
       "background:rgb(56 189 248 / 14%)",
     ].join(";");
     this.document.body.appendChild(this.overlay);
+    this.stopBridge = bridge.on(() => {
+      if (this.active) this.syncClosedRootListeners();
+    });
   }
 
   public get enabled(): boolean {
@@ -183,6 +283,8 @@ export class ComponentInspector {
     this.document.addEventListener("pointermove", this.onPointerMove, true);
     this.document.addEventListener("click", this.onClick, true);
     this.document.addEventListener("keydown", this.onKeyDown, true);
+    this.syncClosedRootListeners();
+    this.options.onEnabledChange?.(true);
   }
 
   public disable(): void {
@@ -191,16 +293,61 @@ export class ComponentInspector {
     this.hoveredId = null;
     this.hoveredElement = null;
     this.hoveredTarget = null;
+    this.pendingHover = null;
+    this.hoverPending = false;
+    if (this.hoverFrame !== null) this.cancelFrame(this.hoverFrame);
+    this.hoverFrame = null;
     this.overlay.style.display = "none";
     this.document.removeEventListener("pointermove", this.onPointerMove, true);
     this.document.removeEventListener("click", this.onClick, true);
     this.document.removeEventListener("keydown", this.onKeyDown, true);
+    for (const root of this.observedClosedRoots) this.removeRootListeners(root);
+    this.observedClosedRoots.clear();
+    this.options.onEnabledChange?.(false);
   }
 
   public dispose(): void {
     this.disable();
+    this.stopBridge();
     this.overlay.remove();
   }
+
+  private syncClosedRootListeners(): void {
+    const next = new Set<ShadowRoot>();
+    for (const component of this.bridge.getSnapshot().components) {
+      const host = this.bridge.getComponentHost(component.id);
+      if (!host) continue;
+      const root = getElfUIRenderRoot(host);
+      if (!(root instanceof ShadowRoot) || host.shadowRoot === root) continue;
+      next.add(root);
+      if (!this.observedClosedRoots.has(root)) this.addRootListeners(root);
+    }
+    for (const root of this.observedClosedRoots)
+      if (!next.has(root)) this.removeRootListeners(root);
+    this.observedClosedRoots.clear();
+    for (const root of next) this.observedClosedRoots.add(root);
+  }
+
+  private addRootListeners(root: ShadowRoot): void {
+    root.addEventListener("pointermove", this.onRootPointerMove, true);
+    root.addEventListener("click", this.onRootClick, true);
+    root.addEventListener("keydown", this.onRootKeyDown, true);
+  }
+
+  private removeRootListeners(root: ShadowRoot): void {
+    root.removeEventListener("pointermove", this.onRootPointerMove, true);
+    root.removeEventListener("click", this.onRootClick, true);
+    root.removeEventListener("keydown", this.onRootKeyDown, true);
+  }
+
+  private readonly onRootPointerMove: EventListener = (event) =>
+    this.onPointerMove(event as PointerEvent);
+
+  private readonly onRootClick: EventListener = (event) =>
+    this.onClick(event as MouseEvent);
+
+  private readonly onRootKeyDown: EventListener = (event) =>
+    this.onKeyDown(event as KeyboardEvent);
 
   private readonly onPointerMove = (event: PointerEvent): void => {
     const target = firstElement(event);
@@ -209,18 +356,39 @@ export class ComponentInspector {
       .map((target) => findRegisteredHost(this.bridge, target))
       .find((candidate): candidate is HTMLElement => candidate !== null);
     const id = host ? this.bridge.getComponentId(host) : null;
-    if (!target || !host || !id) {
+    this.pendingHover =
+      target && host && id ? { target, host, componentId: id } : null;
+    this.hoverPending = true;
+    if (this.hoverFrame !== null) return;
+    this.hoverFrame = this.requestFrame(() => {
+      this.hoverFrame = null;
+      this.commitPendingHover();
+    });
+  };
+
+  private commitPendingHover(): void {
+    if (!this.hoverPending) return;
+    this.hoverPending = false;
+    const candidate = this.pendingHover;
+    this.pendingHover = null;
+    if (!candidate) {
       this.hoveredId = null;
       this.hoveredElement = null;
       this.hoveredTarget = null;
       this.overlay.style.display = "none";
       return;
     }
-    this.hoveredId = id;
+    const { componentId, host, target } = candidate;
+    this.hoveredId = componentId;
     this.hoveredElement = target;
-    this.hoveredTarget = snapshotTarget(this.bridge, id, target, host);
+    this.hoveredTarget = createInspectorTargetSnapshot(
+      this.bridge,
+      componentId,
+      target,
+      host,
+    );
     const bounds = target.getBoundingClientRect();
-    this.overlay.dataset.componentId = id;
+    this.overlay.dataset.componentId = componentId;
     this.overlay.dataset.sourcePrecision = this.hoveredTarget.sourcePrecision;
     if (this.hoveredTarget.templateNodeId)
       this.overlay.dataset.templateNodeId = this.hoveredTarget.templateNodeId;
@@ -230,9 +398,17 @@ export class ComponentInspector {
     this.overlay.style.width = `${bounds.width}px`;
     this.overlay.style.height = `${bounds.height}px`;
     this.overlay.style.display = "block";
-  };
+  }
+
+  private flushPendingHover(): void {
+    if (!this.hoverPending) return;
+    if (this.hoverFrame !== null) this.cancelFrame(this.hoverFrame);
+    this.hoverFrame = null;
+    this.commitPendingHover();
+  }
 
   private readonly onClick = (event: MouseEvent): void => {
+    this.flushPendingHover();
     const target = firstElement(event);
     const host = event
       .composedPath()

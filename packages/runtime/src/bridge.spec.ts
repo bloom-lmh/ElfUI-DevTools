@@ -333,6 +333,34 @@ describe("ElfUIDevtoolsBridge", () => {
       },
       duration: 1.25,
     });
+    bridge.ingestCompilerArtifact({
+      revision: 1,
+      capturedAt: 30,
+      id: "diagnostics:counter",
+      sourceId: "src/Counter.elf",
+      kind: "diagnostics",
+      payload: [
+        {
+          severity: "warning",
+          code: "ELF_BINDING_READONLY",
+          message: "Binding cannot be assigned.",
+          hint: "Use a writable signal.",
+          component: "elf-reactivity-counter",
+          fragment: "content",
+          file: "/src/Counter.elf",
+          line: 13,
+          column: 8,
+        },
+        {
+          severity: "error",
+          code: "ELF_OTHER_COMPONENT",
+          message: "Belongs to another component.",
+          component: "elf-other",
+          line: 1,
+          column: 1,
+        },
+      ],
+    });
 
     expect(bridge.getTimeline().slice(-2)).toMatchObject([
       {
@@ -347,6 +375,29 @@ describe("ElfUIDevtoolsBridge", () => {
         summary: "text ran in 1.25ms @ /src/Counter.elf:13:8",
       },
     ]);
+    expect(bridge.getComponentDetail("elfui-component:counter")).toMatchObject({
+      bindings: [
+        {
+          effectId: "elfui-effect:1",
+          kind: "binding",
+          name: "text",
+          source: { file: "/src/Counter.elf", line: 13, column: 8 },
+          triggerCount: 1,
+          runCount: 1,
+          lastDuration: 1.25,
+        },
+      ],
+      diagnostics: [
+        {
+          severity: "warning",
+          code: "ELF_BINDING_READONLY",
+          message: "Binding cannot be assigned.",
+          hint: "Use a writable signal.",
+          fragment: "content",
+          source: { file: "/src/Counter.elf", line: 13, column: 8 },
+        },
+      ],
+    });
   });
 
   it("pauses, rate limits, clears, and aggregates timeline events", () => {

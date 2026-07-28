@@ -28,7 +28,7 @@ Passing `devtools.compiler` to the ElfUI compiler plugin lets DevTools consume M
 structured diagnostics without compiling a source file twice. Existing compiler options can be
 placed alongside the spread.
 
-In development, it injects a bottom-center launcher with separate **ElfUI DevTools** and **Component Inspector** buttons. The panel stays hidden until opened; choose the inspector, then click any element inside an ElfUI component to capture its DOM identity, component ownership, template node, Fragment, and source range. When exact template metadata is unavailable, the snapshot explicitly reports component-level or unresolved precision instead of inventing a source location. The panel also exposes the component tree, props, attributes, setup snapshot, exposed state, lifecycle count, recent timeline events, compiler metadata, diagnostics, and serialized Data Pipeline records. The plugin uses `apply: "serve"`, so it is absent from production builds.
+In development, it injects a bottom-center launcher with separate **ElfUI DevTools** and **Component Inspector** buttons. The panel stays hidden until opened; choose the inspector (or press `Ctrl/Cmd+Shift+C`), then click any element inside an ElfUI component to capture its DOM identity, component ownership, template node, Fragment, and source range. When exact template metadata is unavailable, the snapshot explicitly reports component-level or unresolved precision instead of inventing a source location. The searchable, ARIA component tree supports keyboard navigation, collapse, selection-linked details, HMR selection recovery, and virtualized rendering for large applications. The inspector can traverse open roots and ElfUI's development-only closed-root channel without weakening production encapsulation. Components, Timeline, Compiler, and Data Pipeline have persistent keyboard-accessible navigation; app filtering and system/light/dark themes are available from the header. Component details expose props, attributes, setup snapshot, exposed state, binding activity and source locations, source, compiler diagnostics, and lifecycle state. Timeline, compiler metadata, and serialized Data Pipeline records remain visible in their dedicated views. The plugin uses `apply: "serve"`, so it is absent from production builds.
 
 For source locations, the compiler may attach a development-only `__elfSource` field to a component constructor:
 
@@ -38,10 +38,22 @@ Counter.__elfSource = { file: "/src/Counter.elf", line: 12, column: 1 };
 
 DevTools exposes this field in the component snapshot and displays it in the detail panel.
 
-Compatible ElfUI compiler builds additionally attach non-enumerable template metadata through
-`Symbol.for("elfui.devtools.template-node")`. It is copied across static-tree clones, includes
-Fragment ownership, and is eliminated from production bundles together with the development
-branch.
+ElfUI beta.15 uses shared development-only WeakMap registries as the authoritative store for
+template-node metadata and closed render roots. The beta.14 node/host Symbols remain best-effort
+compatibility mirrors, so native DOM objects that reject Symbol descriptors cannot interrupt
+rendering or inspection. Static-tree clones retain the same template identity and Fragment
+ownership. Production builds are verified not to contain either registry key or compatibility
+marker.
+
+The 5,000-component performance budget and real Chromium P1 flows are executable gates:
+
+```bash
+pnpm test:large-tree
+pnpm test:browser
+```
+
+The Chromium gate covers registry-only closed Shadow Root selection, component/template-node
+selection recovery after HMR replacement, and Inspector hover layout-read coalescing.
 
 ## RPC boundary
 

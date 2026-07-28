@@ -116,11 +116,32 @@ export interface ComponentNodeSnapshot {
   source?: SourceLocation;
 }
 
+export interface ComponentBindingSnapshot {
+  effectId: string;
+  kind: string;
+  name: string;
+  source?: SourceLocation;
+  triggerCount: number;
+  runCount: number;
+  lastDuration: number | null;
+}
+
+export interface ComponentDiagnosticSnapshot {
+  severity: "error" | "warning" | "info";
+  code: string;
+  message: string;
+  hint?: string;
+  fragment?: string;
+  source?: SourceLocation;
+}
+
 export interface ComponentDetailSnapshot extends ComponentNodeSnapshot {
   props: SerializedValue;
   attrs: SerializedValue;
   setup: SerializedValue;
   exposed: SerializedValue;
+  bindings: ComponentBindingSnapshot[];
+  diagnostics: ComponentDiagnosticSnapshot[];
   lifecycle: {
     updateCount: number;
     lastUpdatedAt: number | null;

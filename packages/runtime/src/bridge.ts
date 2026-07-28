@@ -4,6 +4,8 @@ import {
   DEVTOOLS_PROTOCOL_VERSION,
   serialize,
   type AppSnapshot,
+  type ComponentBindingSnapshot,
+  type ComponentDiagnosticSnapshot,
   type ComponentDetailSnapshot,
   type ComponentNodeSnapshot,
   type CompilerArtifact,
@@ -131,6 +133,7 @@ interface ComponentRecord {
   updateCount: number;
   lastUpdatedAt: number | null;
   error: unknown | null;
+  bindings: Map<string, ComponentBindingSnapshot>;
 }
 
 const elementParent = (element: HTMLElement): HTMLElement | null => {
@@ -158,6 +161,34 @@ const objectValue = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object"
     ? (value as Record<string, unknown>)
     : null;
+
+const normalizeSourceId = (value: string): string =>
+  value.replaceAll("\\", "/").replace(/^\.\/+/u, "");
+
+const sourceIdsMatch = (left: string, right: string): boolean => {
+  const normalizedLeft = normalizeSourceId(left);
+  const normalizedRight = normalizeSourceId(right);
+  return (
+    normalizedLeft === normalizedRight ||
+    normalizedLeft.endsWith(`/${normalizedRight}`) ||
+    normalizedRight.endsWith(`/${normalizedLeft}`)
+  );
+};
+
+const bindingSourceLocation = (
+  componentSource: SourceLocation | undefined,
+  bindingSource: { line: number; column: number } | undefined,
+): SourceLocation | undefined => {
+  if (!componentSource || !bindingSource) return undefined;
+  return {
+    file: componentSource.file,
+    line: componentSource.line + bindingSource.line - 1,
+    column:
+      bindingSource.line === 1
+        ? componentSource.column + bindingSource.column - 1
+        : bindingSource.column,
+  };
+};
 
 const compilerArtifactSummary = (artifact: CompilerArtifact): string => {
   if (artifact.kind === "metadata") {
@@ -272,6 +303,7 @@ export class ElfUIDevtoolsBridge implements DevtoolsRpcHandler {
       updateCount: 0,
       lastUpdatedAt: null,
       error: null,
+      bindings: new Map(),
     };
     this.components.set(id, record);
     this.componentIds.set(host, id);
@@ -398,6 +430,25 @@ export class ElfUIDevtoolsBridge implements DevtoolsRpcHandler {
   };
 
   public readonly emitReactivityEvent = (event: ElfUIReactivityEvent): void => {
+    if (event.type === "reactivity:trigger") {
+      for (const effect of event.effects) {
+        if (!effect.componentId) continue;
+        this.captureBinding(
+          effect.componentId,
+          effect.effectId,
+          effect.debug,
+          true,
+        );
+      }
+    } else if (event.componentId) {
+      this.captureBinding(
+        event.componentId,
+        event.effectId,
+        event.debug,
+        false,
+        event.duration,
+      );
+    }
     const componentIds =
       event.type === "reactivity:trigger"
         ? event.effects.flatMap((effect) =>
@@ -416,20 +467,13 @@ export class ElfUIDevtoolsBridge implements DevtoolsRpcHandler {
         ? event.effects.find((effect) => effect.debug)?.debug
         : event.debug;
     const binding = firstDebug?.name ? ` → ${firstDebug.name}` : "";
-    const componentSource = component.input.source;
-    const bindingSource = firstDebug?.source;
-    const resolvedLine = bindingSource
-      ? (componentSource?.line ?? 1) + bindingSource.line - 1
-      : null;
-    const resolvedColumn = bindingSource
-      ? bindingSource.line === 1
-        ? (componentSource?.column ?? 1) + bindingSource.column - 1
-        : bindingSource.column
-      : null;
-    const location =
-      resolvedLine !== null && resolvedColumn !== null
-        ? ` @ ${componentSource?.file ? `${componentSource.file}:` : ""}${resolvedLine}:${resolvedColumn}`
-        : "";
+    const source = bindingSourceLocation(
+      component.input.source,
+      firstDebug?.source,
+    );
+    const location = source
+      ? ` @ ${source.file ? `${source.file}:` : ""}${source.line}:${source.column}`
+      : "";
     const summary =
       event.type === "reactivity:trigger"
         ? `${event.targetName ?? event.targetId}.${event.key}${binding} triggered ${event.effects.length} effect${event.effects.length === 1 ? "" : "s"}${location}`
@@ -443,6 +487,32 @@ export class ElfUIDevtoolsBridge implements DevtoolsRpcHandler {
       data: serialize(event),
     });
   };
+
+  private captureBinding(
+    componentId: string,
+    effectId: string,
+    debug: EffectDebugInfo | undefined,
+    triggered: boolean,
+    duration: number | null = null,
+  ): void {
+    if (debug?.kind !== "binding") return;
+    const component = this.components.get(componentId);
+    if (!component) return;
+    const previous = component.bindings.get(effectId);
+    const source =
+      bindingSourceLocation(component.input.source, debug.source) ??
+      previous?.source;
+    component.bindings.set(effectId, {
+      effectId,
+      kind: debug.kind,
+      name: debug.name ?? previous?.name ?? effectId,
+      ...(source ? { source } : {}),
+      triggerCount: (previous?.triggerCount ?? 0) + (triggered ? 1 : 0),
+      runCount: (previous?.runCount ?? 0) + (triggered ? 0 : 1),
+      lastDuration:
+        duration === null ? (previous?.lastDuration ?? null) : duration,
+    });
+  }
 
   public getSnapshot(): DevtoolsSnapshot {
     return {
@@ -463,6 +533,11 @@ export class ElfUIDevtoolsBridge implements DevtoolsRpcHandler {
       attrs: snapshotValue(component.input.attrs),
       setup: snapshotValue(component.input.setup),
       exposed: snapshotValue(component.input.exposed),
+      bindings: Array.from(component.bindings.values(), (binding) => ({
+        ...binding,
+        ...(binding.source ? { source: { ...binding.source } } : {}),
+      })).sort((left, right) => left.name.localeCompare(right.name)),
+      diagnostics: this.componentDiagnostics(component),
       lifecycle: {
         updateCount: component.updateCount,
         lastUpdatedAt: component.lastUpdatedAt,
@@ -471,8 +546,71 @@ export class ElfUIDevtoolsBridge implements DevtoolsRpcHandler {
     };
   }
 
+  private componentDiagnostics(
+    component: ComponentRecord,
+  ): ComponentDiagnosticSnapshot[] {
+    const sourceFile = component.input.source?.file;
+    if (!sourceFile) return [];
+    return Array.from(this.compilerArtifacts.values()).flatMap((artifact) => {
+      if (
+        artifact.kind !== "diagnostics" ||
+        !sourceIdsMatch(sourceFile, artifact.sourceId) ||
+        !Array.isArray(artifact.payload)
+      )
+        return [];
+      return artifact.payload.flatMap((value) => {
+        const diagnostic = objectValue(value);
+        if (!diagnostic) return [];
+        if (
+          typeof diagnostic.component === "string" &&
+          diagnostic.component !== component.input.tag &&
+          diagnostic.component !== component.input.displayName
+        )
+          return [];
+        const line =
+          typeof diagnostic.line === "number" ? diagnostic.line : undefined;
+        const column =
+          typeof diagnostic.column === "number" ? diagnostic.column : undefined;
+        const file =
+          typeof diagnostic.file === "string"
+            ? diagnostic.file
+            : artifact.sourceId;
+        return [
+          {
+            severity:
+              diagnostic.severity === "error" ||
+              diagnostic.severity === "warning"
+                ? diagnostic.severity
+                : "info",
+            code:
+              typeof diagnostic.code === "string"
+                ? diagnostic.code
+                : "ELF_COMPILER_DIAGNOSTIC",
+            message:
+              typeof diagnostic.message === "string"
+                ? diagnostic.message
+                : "Compiler diagnostic",
+            ...(typeof diagnostic.hint === "string"
+              ? { hint: diagnostic.hint }
+              : {}),
+            ...(typeof diagnostic.fragment === "string"
+              ? { fragment: diagnostic.fragment }
+              : {}),
+            ...(line !== undefined && column !== undefined
+              ? { source: { file, line, column } }
+              : {}),
+          } satisfies ComponentDiagnosticSnapshot,
+        ];
+      });
+    });
+  }
+
   public getComponentId(host: HTMLElement): string | null {
     return this.componentIds.get(host) ?? null;
+  }
+
+  public getComponentHost(id: string): HTMLElement | null {
+    return this.components.get(id)?.host.deref() ?? null;
   }
 
   public getTimeline(): readonly TimelineEvent[] {

@@ -4,22 +4,44 @@ import {
   createInPageDevtoolsTransport,
 } from "@elfui/devtools-runtime";
 import { ELFUI_TEMPLATE_NODE_DEBUG_KEY } from "@elfui/devtools-shared";
-import { DEVTOOLS_LAYOUT_STORAGE_KEY, DevtoolsPanel } from "./panel";
+import {
+  DEVTOOLS_LAYOUT_STORAGE_KEY,
+  DEVTOOLS_PREFERENCES_STORAGE_KEY,
+  DevtoolsPanel,
+} from "./panel";
 import { DevtoolsRpcClient } from "./rpc-client";
 
 describe("DevtoolsPanel", () => {
   afterEach(() => {
     document.body.replaceChildren();
     window.localStorage.clear();
+    delete (globalThis as unknown as Record<symbol, unknown>)[
+      Symbol.for("elfui.devtools.template-node-registry")
+    ];
+    delete (globalThis as unknown as Record<symbol, unknown>)[
+      Symbol.for("elfui.devtools.render-root-registry")
+    ];
   });
   it("renders a component tree, opens its source, and shows details", async () => {
     const bridge = createDevtoolsBridge();
     const host = document.createElement("elf-counter");
-    bridge.registerComponent({
+    const componentId = bridge.registerComponent({
       host,
       tag: "elf-counter",
       props: () => ({ count: 2 }),
       source: { file: "/src/Counter.elf", line: 2, column: 3 },
+    });
+    bridge.emitReactivityEvent({
+      type: "reactivity:effect",
+      triggerId: "trigger:counter",
+      effectId: "effect:counter-text",
+      componentId,
+      debug: {
+        kind: "binding",
+        name: "text:count",
+        source: { line: 3, column: 5 },
+      },
+      duration: 0.75,
     });
     bridge.ingestCompilerArtifact({
       revision: 1,
@@ -39,6 +61,23 @@ describe("DevtoolsPanel", () => {
           },
         ],
       },
+    });
+    bridge.ingestCompilerArtifact({
+      revision: 2,
+      capturedAt: 11,
+      id: "/project/src/Counter.elf:diagnostics",
+      sourceId: "src/Counter.elf",
+      kind: "diagnostics",
+      payload: [
+        {
+          severity: "warning",
+          code: "ELF_COUNTER_HINT",
+          message: "Counter label can be simplified.",
+          component: "elf-counter",
+          line: 4,
+          column: 5,
+        },
+      ],
     });
     const openSource = vi.fn().mockResolvedValue(undefined);
     const panel = new DevtoolsPanel(bridge, document, undefined, openSource);
@@ -63,6 +102,8 @@ describe("DevtoolsPanel", () => {
     expect(panelNode?.textContent).toContain("count: 2");
     expect(panelNode?.textContent).toContain("elf-counter");
     expect(panelNode?.textContent).toContain("/src/Counter.elf:2:3");
+    expect(panelNode?.textContent).toContain("text:count");
+    expect(panelNode?.textContent).toContain("ELF_COUNTER_HINT");
     expect(
       shadow?.querySelector("[data-elfui-devtools=compiler-state]")
         ?.textContent,
@@ -89,6 +130,7 @@ describe("DevtoolsPanel", () => {
       });
     });
     bridge.notifyUpdate(host);
+    await Promise.resolve();
     expect(
       shadow?.querySelector("[data-elfui-devtools=timeline]")?.textContent,
     ).toContain("component:update");
@@ -186,6 +228,210 @@ describe("DevtoolsPanel", () => {
     panel.dispose();
   });
 
+  it("supports keyboard navigation, inspector shortcuts, focus, and tree ARIA", async () => {
+    const bridge = createDevtoolsBridge();
+    const rootId = bridge.registerComponent({
+      host: document.createElement("elf-root"),
+      tag: "elf-root",
+    });
+    bridge.registerComponent({
+      host: document.createElement("elf-child"),
+      parentId: rootId,
+      tag: "elf-child",
+    });
+    const panel = new DevtoolsPanel(bridge, document);
+    const shadow = document.querySelector<HTMLElement>(
+      "[data-elfui-devtools=host]",
+    )?.shadowRoot;
+    const panelToggle = shadow?.querySelector<HTMLButtonElement>(
+      '[aria-label="Toggle ElfUI DevTools"]',
+    );
+    panelToggle?.click();
+    await Promise.resolve();
+    expect(
+      (shadow?.activeElement as HTMLElement | null)?.dataset.devtoolsTab,
+    ).toBe("components");
+
+    const componentsTab = shadow?.querySelector<HTMLButtonElement>(
+      '[data-devtools-tab="components"]',
+    );
+    componentsTab?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowRight" }),
+    );
+    expect(
+      (shadow?.activeElement as HTMLElement | null)?.dataset.devtoolsTab,
+    ).toBe("timeline");
+
+    shadow
+      ?.querySelector<HTMLButtonElement>('[data-devtools-tab="components"]')
+      ?.click();
+    const tree = shadow?.querySelector<HTMLElement>(
+      "[data-elfui-devtools=component-tree]",
+    );
+    expect(tree?.getAttribute("role")).toBe("tree");
+    const rootButton = Array.from(
+      tree?.querySelectorAll<HTMLButtonElement>("button.component") ?? [],
+    ).find((button) => button.textContent === "<elf-root>");
+    expect(rootButton).toMatchObject({
+      tabIndex: 0,
+    });
+    expect(rootButton?.getAttribute("role")).toBe("treeitem");
+    expect(rootButton?.getAttribute("aria-expanded")).toBe("true");
+    rootButton?.focus();
+    rootButton?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowDown" }),
+    );
+    expect((shadow?.activeElement as HTMLElement | null)?.textContent).toBe(
+      "<elf-child>",
+    );
+    (shadow?.activeElement as HTMLElement | null)?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowLeft" }),
+    );
+    expect((shadow?.activeElement as HTMLElement | null)?.textContent).toBe(
+      "<elf-root>",
+    );
+    (shadow?.activeElement as HTMLElement | null)?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowLeft" }),
+    );
+    await Promise.resolve();
+    expect(
+      tree
+        ?.querySelector<HTMLButtonElement>(
+          'button.component[data-component-id="' + rootId + '"]',
+        )
+        ?.getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(tree?.textContent).not.toContain("elf-child");
+
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "c",
+        ctrlKey: true,
+        shiftKey: true,
+      }),
+    );
+    const inspectorToggle = shadow?.querySelector<HTMLButtonElement>(
+      '[aria-label="Toggle Component Inspector"]',
+    );
+    expect(inspectorToggle?.getAttribute("aria-pressed")).toBe("true");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(inspectorToggle?.getAttribute("aria-pressed")).toBe("false");
+    expect(panel.opened).toBe(true);
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(panel.opened).toBe(false);
+    expect(shadow?.activeElement).toBe(panelToggle);
+    panel.dispose();
+  });
+
+  it("filters apps and persists navigation and theme preferences", () => {
+    window.localStorage.setItem(
+      DEVTOOLS_PREFERENCES_STORAGE_KEY,
+      JSON.stringify({
+        activeTab: "timeline",
+        theme: "light",
+        appId: "app:alpha",
+      }),
+    );
+    const bridge = createDevtoolsBridge();
+    bridge.registerApp("app:alpha", "Alpha app");
+    bridge.registerApp("app:beta", "Beta app");
+    bridge.registerComponent({
+      host: document.createElement("elf-alpha-card"),
+      appId: "app:alpha",
+      tag: "elf-alpha-card",
+    });
+    bridge.registerComponent({
+      host: document.createElement("elf-beta-card"),
+      appId: "app:beta",
+      tag: "elf-beta-card",
+    });
+
+    const panel = new DevtoolsPanel(bridge, document);
+    const host = document.querySelector<HTMLElement>(
+      "[data-elfui-devtools=host]",
+    );
+    const shadow = host?.shadowRoot;
+    expect(host?.dataset.theme).toBe("light");
+    expect(
+      shadow
+        ?.querySelector('[data-devtools-tab="timeline"]')
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(
+      shadow?.querySelector<HTMLElement>(
+        "[data-elfui-devtools=components-view]",
+      )?.hidden,
+    ).toBe(true);
+    expect(
+      shadow?.querySelector<HTMLElement>("#elfui-devtools-view-timeline")
+        ?.hidden,
+    ).toBe(false);
+    expect(
+      shadow?.querySelector<HTMLSelectElement>(
+        '[aria-label="Select ElfUI app"]',
+      )?.value,
+    ).toBe("app:alpha");
+    expect(
+      shadow?.querySelector("[data-elfui-devtools=component-tree]")
+        ?.textContent,
+    ).toContain("elf-alpha-card");
+    expect(
+      shadow?.querySelector("[data-elfui-devtools=component-tree]")
+        ?.textContent,
+    ).not.toContain("elf-beta-card");
+
+    shadow
+      ?.querySelector<HTMLButtonElement>('[data-devtools-tab="pipeline"]')
+      ?.click();
+    const theme = shadow?.querySelector<HTMLSelectElement>(
+      '[aria-label="DevTools theme"]',
+    );
+    if (theme) {
+      theme.value = "dark";
+      theme.dispatchEvent(new Event("change"));
+    }
+    const app = shadow?.querySelector<HTMLSelectElement>(
+      '[aria-label="Select ElfUI app"]',
+    );
+    if (app) {
+      app.value = "app:beta";
+      app.dispatchEvent(new Event("change"));
+    }
+
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(DEVTOOLS_PREFERENCES_STORAGE_KEY) ?? "null",
+      ),
+    ).toEqual({
+      activeTab: "pipeline",
+      theme: "dark",
+      appId: "app:beta",
+    });
+    expect(host?.dataset.theme).toBe("dark");
+    expect(
+      shadow?.querySelector("[data-elfui-devtools=component-tree]")
+        ?.textContent,
+    ).toContain("elf-beta-card");
+    panel.dispose();
+
+    const restored = new DevtoolsPanel(bridge, document);
+    const restoredHost = document.querySelector<HTMLElement>(
+      "[data-elfui-devtools=host]",
+    );
+    expect(restoredHost?.dataset.theme).toBe("dark");
+    expect(
+      restoredHost?.shadowRoot
+        ?.querySelector('[data-devtools-tab="pipeline"]')
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(
+      restoredHost?.shadowRoot?.querySelector<HTMLSelectElement>(
+        '[aria-label="Select ElfUI app"]',
+      )?.value,
+    ).toBe("app:beta");
+    restored.dispose();
+  });
+
   it("records an inspected template element as a visible target snapshot", () => {
     const bridge = createDevtoolsBridge();
     const host = document.createElement("elf-form");
@@ -230,6 +476,168 @@ describe("DevtoolsPanel", () => {
     expect(pipelineJson).toContain("src/Form.ts:button:8:5");
     expect(pipelineJson).toContain('"key": "sourcePrecision"');
     expect(pipelineJson).toContain('"value": "template-node"');
+    panel.dispose();
+  });
+
+  it("restores a template-node selection after an HMR replacement", async () => {
+    const bridge = createDevtoolsBridge();
+    const markerKey = Symbol.for(ELFUI_TEMPLATE_NODE_DEBUG_KEY);
+    const createHost = (label: string): [HTMLElement, HTMLButtonElement] => {
+      const host = document.createElement("elf-hmr-card");
+      const button = document.createElement("button");
+      button.textContent = label;
+      (button as unknown as Record<symbol, unknown>)[markerKey] = {
+        sourceId: "src/HmrCard.ts",
+        templateNodeId: "src/HmrCard.ts:component:button:6:3",
+        source: { file: "src/HmrCard.ts", line: 6, column: 3 },
+      };
+      host.attachShadow({ mode: "open" }).append(button);
+      return [host, button];
+    };
+    const [oldHost, oldButton] = createHost("before");
+    document.body.append(oldHost);
+    bridge.registerComponent({
+      host: oldHost,
+      tag: "elf-hmr-card",
+      source: { file: "src/HmrCard.ts", line: 1, column: 1 },
+    });
+    const panel = new DevtoolsPanel(bridge, document);
+    const shadow = document.querySelector<HTMLElement>(
+      "[data-elfui-devtools=host]",
+    )?.shadowRoot;
+    shadow
+      ?.querySelector<HTMLButtonElement>(
+        '[aria-label="Toggle Component Inspector"]',
+      )
+      ?.click();
+    oldButton.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, composed: true }),
+    );
+    oldButton.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }),
+    );
+
+    const [newHost] = createHost("after");
+    oldHost.replaceWith(newHost);
+    bridge.unregisterComponent(oldHost);
+    const replacementId = bridge.registerComponent({
+      host: newHost,
+      tag: "elf-hmr-card",
+      source: { file: "src/HmrCard.ts", line: 1, column: 1 },
+    });
+
+    await vi.waitFor(() => {
+      expect(
+        bridge
+          .getPipelineState()
+          .records.some((record) => record.kind === "selection.restore"),
+      ).toBe(true);
+      expect(
+        shadow?.querySelector<HTMLButtonElement>(
+          `button.component[aria-pressed="true"]`,
+        )?.textContent,
+      ).toBe("<elf-hmr-card>");
+      expect(
+        shadow?.querySelector("[data-elfui-devtools=pipeline-json]")
+          ?.textContent,
+      ).toContain(replacementId);
+      expect(
+        shadow?.querySelector("[data-elfui-devtools=pipeline-json]")
+          ?.textContent,
+      ).toContain("src/HmrCard.ts:component:button:6:3");
+    });
+    panel.dispose();
+  });
+
+  it("invalidates a removed selection when HMR has no replacement", async () => {
+    const bridge = createDevtoolsBridge();
+    const host = document.createElement("elf-hmr-removed");
+    bridge.registerComponent({
+      host,
+      tag: "elf-hmr-removed",
+      source: { file: "src/Removed.ts", line: 1, column: 1 },
+    });
+    const panel = new DevtoolsPanel(bridge, document);
+    const shadow = document.querySelector<HTMLElement>(
+      "[data-elfui-devtools=host]",
+    )?.shadowRoot;
+    shadow?.querySelector<HTMLButtonElement>("button.component")?.click();
+    bridge.unregisterComponent(host);
+
+    await vi.waitFor(() => {
+      expect(
+        bridge
+          .getPipelineState()
+          .records.some((record) => record.kind === "selection.invalidate"),
+      ).toBe(true);
+      expect(
+        shadow?.querySelector("[data-elfui-devtools=component-detail]"),
+      ).toBeNull();
+    });
+    panel.dispose();
+  });
+
+  it("inspects template nodes inside a registry-only closed shadow root", () => {
+    const bridge = createDevtoolsBridge();
+    const host = document.createElement("elf-closed-card");
+    const root = host.attachShadow({ mode: "closed" });
+    const renderRoots = new WeakMap<HTMLElement, ShadowRoot>();
+    renderRoots.set(host, root);
+    Object.defineProperty(
+      globalThis,
+      Symbol.for("elfui.devtools.render-root-registry"),
+      {
+        value: renderRoots,
+        configurable: true,
+      },
+    );
+    const templateNodes = new WeakMap<Node, unknown>();
+    const button = document.createElement("button");
+    button.textContent = "Closed action";
+    templateNodes.set(button, {
+      sourceId: "src/ClosedCard.ts",
+      templateNodeId: "src/ClosedCard.ts:component:button:4:3",
+      source: { file: "src/ClosedCard.ts", line: 4, column: 3 },
+    });
+    Object.defineProperty(
+      globalThis,
+      Symbol.for("elfui.devtools.template-node-registry"),
+      {
+        value: templateNodes,
+        configurable: true,
+      },
+    );
+    root.append(button);
+    document.body.append(host);
+    bridge.registerComponent({ host, tag: "elf-closed-card" });
+    const panel = new DevtoolsPanel(bridge, document);
+    const shadow = document.querySelector<HTMLElement>(
+      "[data-elfui-devtools=host]",
+    )?.shadowRoot;
+    shadow
+      ?.querySelector<HTMLButtonElement>(
+        '[aria-label="Toggle Component Inspector"]',
+      )
+      ?.click();
+
+    button.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, composed: true }),
+    );
+    button.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }),
+    );
+
+    expect(
+      shadow?.querySelector("[data-elfui-devtools=pipeline-json]")?.textContent,
+    ).toContain("src/ClosedCard.ts:component:button:4:3");
     panel.dispose();
   });
 

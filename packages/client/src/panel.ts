@@ -1,4 +1,5 @@
 import type {
+  ComponentNodeSnapshot,
   ComponentDetailSnapshot,
   CompilerArtifact,
   CompilerStateSnapshot,
@@ -12,18 +13,35 @@ import type {
 } from "@elfui/devtools-shared";
 import type { ElfUIDevtoolsBridge } from "@elfui/devtools-runtime";
 
-import { ComponentInspector } from "./index.js";
+import {
+  ComponentInspector,
+  createInspectorTargetSnapshot,
+  findTemplateNode,
+} from "./index.js";
 import type { DevtoolsRpcClient } from "./rpc-client.js";
 import { openSourceInEditor, type OpenSourceInEditor } from "./source.js";
 
 export const DEVTOOLS_LAYOUT_STORAGE_KEY = "elfui-devtools:layout:v1";
+export const DEVTOOLS_PREFERENCES_STORAGE_KEY = "elfui-devtools:preferences:v1";
+export const COMPONENT_TREE_VIRTUALIZE_THRESHOLD = 300;
+export const COMPONENT_TREE_ROW_HEIGHT = 28;
+
+const COMPONENT_TREE_OVERSCAN = 8;
 
 type DockPosition = "floating" | "bottom" | "left" | "right";
+type PanelTab = "components" | "timeline" | "compiler" | "pipeline";
+type PanelTheme = "system" | "light" | "dark";
 
 interface PanelLayout {
   dock: DockPosition;
   width: number;
   height: number;
+}
+
+interface PanelPreferences {
+  activeTab: PanelTab;
+  theme: PanelTheme;
+  appId: string | null;
 }
 
 interface ResizeStart {
@@ -33,10 +51,21 @@ interface ResizeStart {
   height: number;
 }
 
+interface SelectedComponentIdentity {
+  tag: string;
+  sourceFile: string | null;
+}
+
 const defaultLayout: PanelLayout = {
   dock: "floating",
   width: 420,
   height: 560,
+};
+
+const defaultPreferences: PanelPreferences = {
+  activeTab: "components",
+  theme: "system",
+  appId: null,
 };
 
 const isDockPosition = (value: unknown): value is DockPosition =>
@@ -47,6 +76,15 @@ const isDockPosition = (value: unknown): value is DockPosition =>
 
 const finiteDimension = (value: unknown, fallback: number): number =>
   typeof value === "number" && Number.isFinite(value) ? value : fallback;
+
+const isPanelTab = (value: unknown): value is PanelTab =>
+  value === "components" ||
+  value === "timeline" ||
+  value === "compiler" ||
+  value === "pipeline";
+
+const isPanelTheme = (value: unknown): value is PanelTheme =>
+  value === "system" || value === "light" || value === "dark";
 
 const readLayout = (storage: Storage | null): PanelLayout => {
   if (!storage) return { ...defaultLayout };
@@ -61,6 +99,26 @@ const readLayout = (storage: Storage | null): PanelLayout => {
     };
   } catch {
     return { ...defaultLayout };
+  }
+};
+
+const readPreferences = (storage: Storage | null): PanelPreferences => {
+  if (!storage) return { ...defaultPreferences };
+  try {
+    const value = JSON.parse(
+      storage.getItem(DEVTOOLS_PREFERENCES_STORAGE_KEY) ?? "null",
+    ) as Partial<PanelPreferences> | null;
+    return {
+      activeTab: isPanelTab(value?.activeTab)
+        ? value.activeTab
+        : defaultPreferences.activeTab,
+      theme: isPanelTheme(value?.theme)
+        ? value.theme
+        : defaultPreferences.theme,
+      appId: typeof value?.appId === "string" ? value.appId : null,
+    };
+  } catch {
+    return { ...defaultPreferences };
   }
 };
 
@@ -221,6 +279,7 @@ const styles = `
   }
   .header-actions button { padding: 2px 7px; cursor: pointer; }
   .header-actions select { padding: 1px 4px; }
+  .app-selector { max-width: 150px; }
   .close {
     border: 0 !important;
     background: transparent !important;
@@ -228,6 +287,30 @@ const styles = `
     cursor: pointer;
   }
   .content { width: 100%; height: 100%; overflow: auto; padding: 10px; }
+  .navigation {
+    display: flex;
+    gap: 3px;
+    margin: 0 0 10px;
+    padding: 3px;
+    border: 1px solid #334155;
+    border-radius: 7px;
+    background: #020617;
+  }
+  .navigation button {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    border-radius: 5px;
+    padding: 5px 7px;
+    background: transparent;
+    color: #94a3b8;
+    cursor: pointer;
+  }
+  .navigation button[aria-selected="true"] {
+    background: #1e293b;
+    color: #7dd3fc;
+  }
+  [role="tabpanel"][hidden] { display: none; }
   .section { margin: 0 0 10px; }
   .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .section-title { margin: 0 0 5px; color: #94a3b8; font-weight: 600; text-transform: uppercase; }
@@ -250,6 +333,24 @@ const styles = `
   .pipeline-record strong { color: #7dd3fc; }
   .pipeline-empty { margin: 0; color: #64748b; }
   .pipeline-json { max-height: 260px; font-size: 11px; }
+  .component-detail {
+    display: grid;
+    gap: 7px;
+    margin-top: 9px;
+    border-top: 1px solid #334155;
+    padding-top: 9px;
+  }
+  .detail-heading { margin: 0; color: #e0f2fe; font-size: 13px; }
+  .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .detail-block { min-width: 0; border: 1px solid #273449; border-radius: 6px; padding: 6px; background: #0b1324; }
+  .detail-block[data-wide="true"] { grid-column: 1 / -1; }
+  .detail-label { margin: 0 0 3px; color: #64748b; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  .detail-value { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .detail-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+  .detail-list li { border-left: 2px solid #334155; padding-left: 6px; }
+  .detail-list li[data-severity="error"] { border-color: #f87171; }
+  .detail-list li[data-severity="warning"] { border-color: #fbbf24; }
+  .detail-list small { display: block; color: #94a3b8; }
   .source-action { margin: 8px 0 0; border: 1px solid #0ea5e9; border-radius: 5px; padding: 4px 8px; background: #082f49; color: #bae6fd; cursor: pointer; }
   .source-action:disabled { cursor: wait; opacity: .65; }
   .component-tools { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
@@ -263,6 +364,19 @@ const styles = `
     color: #e2e8f0;
   }
   .component-tree { display: grid; gap: 1px; }
+  .component-tree[data-virtualized="true"] {
+    position: relative;
+    display: block;
+    max-height: 280px;
+    overflow: auto;
+  }
+  .component-virtual-spacer { position: relative; min-width: 100%; }
+  .component-tree[data-virtualized="true"] .component-row {
+    position: absolute;
+    right: 0;
+    left: 0;
+    height: ${COMPONENT_TREE_ROW_HEIGHT}px;
+  }
   .component-row { display: flex; align-items: center; min-width: 0; }
   .tree-toggle {
     flex: 0 0 22px;
@@ -290,6 +404,47 @@ const styles = `
   .component[aria-pressed="true"] { background: #1e293b; color: #7dd3fc; }
   ol { margin: 0; padding-left: 22px; color: #cbd5e1; }
   pre { margin: 8px 0 0; overflow: auto; padding: 8px; border-radius: 6px; background: #020617; white-space: pre-wrap; }
+  :host([data-theme="light"]) { color-scheme: light; }
+  :host([data-theme="light"]) .panel {
+    border-color: #cbd5e1;
+    background: #ffffff;
+    color: #0f172a;
+    box-shadow: 0 18px 48px rgb(15 23 42 / 22%);
+  }
+  :host([data-theme="light"]) .header,
+  :host([data-theme="light"]) .pipeline-record { background: #f8fafc; }
+  :host([data-theme="light"]) .header { border-color: #e2e8f0; }
+  :host([data-theme="light"]) .header-actions button,
+  :host([data-theme="light"]) .header-actions select,
+  :host([data-theme="light"]) .timeline-actions button {
+    border-color: #cbd5e1;
+    background: #ffffff;
+    color: #334155;
+  }
+  :host([data-theme="light"]) .navigation {
+    border-color: #e2e8f0;
+    background: #f1f5f9;
+  }
+  :host([data-theme="light"]) .navigation button[aria-selected="true"],
+  :host([data-theme="light"]) .component:hover,
+  :host([data-theme="light"]) .component[aria-pressed="true"] {
+    background: #e0f2fe;
+    color: #0369a1;
+  }
+  :host([data-theme="light"]) .component-search,
+  :host([data-theme="light"]) pre {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+    color: #0f172a;
+  }
+  :host([data-theme="light"]) ol,
+  :host([data-theme="light"]) .pipeline-record { color: #334155; }
+  :host([data-theme="dark"]) { color-scheme: dark; }
+  :host([data-theme="dark"]) .launcher {
+    border-color: rgb(71 85 105 / 70%);
+    background: rgb(15 23 42 / 94%);
+  }
+  :host([data-theme="dark"]) .launcher button { color: #94a3b8; }
   @media (prefers-color-scheme: dark) {
     .launcher { border-color: rgb(71 85 105 / 70%); background: rgb(15 23 42 / 94%); }
     .launcher button { color: #94a3b8; }
@@ -317,6 +472,9 @@ export class DevtoolsPanel {
   private readonly inspectorToggle: HTMLButtonElement;
   private readonly inspector: ComponentInspector;
   private selectedId: string | null = null;
+  private selectedTarget: InspectorTargetSnapshot | null = null;
+  private selectedTemplateNodeId: string | null = null;
+  private selectedIdentity: SelectedComponentIdentity | null = null;
   private selectedPipelineId: string | null = null;
   private selectedCompilerSourceId: string | null = null;
   private componentQuery = "";
@@ -326,10 +484,15 @@ export class DevtoolsPanel {
   private readonly stop: () => void;
   private readonly stopPipeline: () => void;
   private renderGeneration = 0;
+  private renderQueued = false;
+  private selectionRecoveryTimer: number | null = null;
   private readonly storage: Storage | null;
   private dock: DockPosition;
   private panelWidth: number;
   private panelHeight: number;
+  private activeTab: PanelTab;
+  private theme: PanelTheme;
+  private selectedAppId: string | null;
   private fullscreen = false;
   private resizeStart: ResizeStart | null = null;
 
@@ -344,8 +507,13 @@ export class DevtoolsPanel {
     this.dock = layout.dock;
     this.panelWidth = layout.width;
     this.panelHeight = layout.height;
+    const preferences = readPreferences(this.storage);
+    this.activeTab = preferences.activeTab;
+    this.theme = preferences.theme;
+    this.selectedAppId = preferences.appId;
     this.host = document.createElement("div");
     this.host.dataset.elfuiDevtools = "host";
+    this.host.dataset.theme = this.theme;
     this.host.style.cssText =
       "position:fixed;inset:0;z-index:2147483647;pointer-events:none";
     this.shadow = this.host.attachShadow({ mode: "open" });
@@ -373,6 +541,10 @@ export class DevtoolsPanel {
       "aria-label",
       "Toggle Component Inspector",
     );
+    this.inspectorToggle.setAttribute(
+      "aria-keyshortcuts",
+      "Control+Shift+C Meta+Shift+C",
+    );
     this.inspectorToggle.onclick = () => {
       if (this.inspector.enabled) this.inspector.disable();
       else this.inspector.enable();
@@ -385,6 +557,7 @@ export class DevtoolsPanel {
     this.panel.dataset.elfuiDevtools = "panel";
     this.panel.setAttribute("role", "dialog");
     this.panel.setAttribute("aria-label", "ElfUI DevTools");
+    this.panel.setAttribute("aria-modal", "false");
     this.panel.hidden = true;
     this.content = document.createElement("div");
     this.content.className = "content";
@@ -407,9 +580,11 @@ export class DevtoolsPanel {
     this.inspector = new ComponentInspector(bridge, {
       document,
       onSelect: (id, target) => this.selectComponent(id, "inspector", target),
+      onEnabledChange: () => this.syncControls(),
     });
-    this.stop = bridge.on(() => this.render());
-    this.stopPipeline = bridge.onPipeline(() => this.render());
+    this.document.addEventListener("keydown", this.onDocumentKeyDown, true);
+    this.stop = bridge.on(() => this.scheduleRender());
+    this.stopPipeline = bridge.onPipeline(() => this.scheduleRender());
     this.syncControls();
     this.render();
   }
@@ -421,7 +596,10 @@ export class DevtoolsPanel {
   public dispose(): void {
     this.stop();
     this.stopPipeline();
+    if (this.selectionRecoveryTimer !== null)
+      this.document.defaultView?.clearTimeout(this.selectionRecoveryTimer);
     this.inspector.dispose();
+    this.document.removeEventListener("keydown", this.onDocumentKeyDown, true);
     this.document.defaultView?.removeEventListener(
       "pointermove",
       this.onPointerMove,
@@ -452,6 +630,23 @@ export class DevtoolsPanel {
 
   private readonly onPointerUp = (): void => {
     this.resizeStart = null;
+  };
+
+  private readonly onDocumentKeyDown = (event: KeyboardEvent): void => {
+    if (
+      event.key.toLowerCase() === "c" &&
+      event.shiftKey &&
+      (event.ctrlKey || event.metaKey)
+    ) {
+      event.preventDefault();
+      if (this.inspector.enabled) this.inspector.disable();
+      else this.inspector.enable();
+      return;
+    }
+    if (event.key === "Escape" && this.visible && !this.inspector.enabled) {
+      event.preventDefault();
+      this.setVisible(false);
+    }
   };
 
   private startResize(event: PointerEvent): void {
@@ -533,10 +728,55 @@ export class DevtoolsPanel {
     }
   }
 
+  private persistPreferences(): void {
+    try {
+      this.storage?.setItem(
+        DEVTOOLS_PREFERENCES_STORAGE_KEY,
+        JSON.stringify({
+          activeTab: this.activeTab,
+          theme: this.theme,
+          appId: this.selectedAppId,
+        } satisfies PanelPreferences),
+      );
+    } catch {
+      // Storage can be disabled by browser privacy settings.
+    }
+  }
+
+  private setActiveTab(tab: PanelTab, focus = false): void {
+    this.activeTab = tab;
+    this.persistPreferences();
+    this.render();
+    if (focus)
+      this.shadow
+        .querySelector<HTMLButtonElement>(`[data-devtools-tab="${tab}"]`)
+        ?.focus();
+  }
+
+  private clearComponentSelection(): void {
+    this.selectedId = null;
+    this.selectedTarget = null;
+    this.selectedTemplateNodeId = null;
+    this.selectedIdentity = null;
+    this.clearSelectionRecoveryTimer();
+  }
+
   private setVisible(visible: boolean): void {
     this.visible = visible;
     this.panel.hidden = !visible;
     this.syncControls();
+    if (!visible) {
+      this.panelToggle.focus();
+      return;
+    }
+    queueMicrotask(() => {
+      if (!this.visible) return;
+      this.shadow
+        .querySelector<HTMLButtonElement>(
+          `[data-devtools-tab="${this.activeTab}"]`,
+        )
+        ?.focus();
+    });
   }
 
   private selectComponent(
@@ -544,13 +784,21 @@ export class DevtoolsPanel {
     selectionSource: "inspector" | "component-tree",
     target?: InspectorTargetSnapshot,
   ): void {
+    this.activeTab = "components";
     this.selectedId = id;
+    this.selectedTarget = target ?? null;
+    this.selectedTemplateNodeId = target?.templateNodeId ?? null;
     let parentId = this.componentParentIds.get(id) ?? null;
     while (parentId) {
       this.collapsedComponentIds.delete(parentId);
       parentId = this.componentParentIds.get(parentId) ?? null;
     }
     const detail = this.bridge.getComponentDetail(id);
+    if (this.selectedAppId && detail && detail.appId !== this.selectedAppId)
+      this.selectedAppId = detail.appId;
+    this.selectedIdentity = detail
+      ? { tag: detail.tag, sourceFile: detail.source?.file ?? null }
+      : null;
     const record = this.bridge.recordPipeline({
       stage: "target-snapshot",
       source: "inspector",
@@ -565,6 +813,7 @@ export class DevtoolsPanel {
       },
     });
     this.selectedPipelineId = record.id;
+    this.persistPreferences();
     this.setVisible(true);
     this.render();
   }
@@ -583,14 +832,130 @@ export class DevtoolsPanel {
       void this.renderFromRpc(generation);
       return;
     }
+    const snapshot = this.bridge.getSnapshot();
+    this.reconcileSelection(snapshot.components);
     this.renderView(
-      this.bridge.getSnapshot(),
+      snapshot,
       this.selectedId ? this.bridge.getComponentDetail(this.selectedId) : null,
       this.bridge.getTimelineStatus(),
       this.bridge.getTimeline(),
       this.bridge.getPipelineState(),
       this.bridge.getCompilerState(),
     );
+  }
+
+  private scheduleRender(): void {
+    if (this.renderQueued) return;
+    this.renderQueued = true;
+    queueMicrotask(() => {
+      this.renderQueued = false;
+      this.render();
+    });
+  }
+
+  private reconcileSelection(
+    components: readonly ComponentNodeSnapshot[],
+  ): void {
+    if (!this.selectedId || !this.selectedIdentity) return;
+    const current = components.find((node) => node.id === this.selectedId);
+    if (current) {
+      this.clearSelectionRecoveryTimer();
+      this.refreshSelectedTarget(current.id);
+      return;
+    }
+
+    const replacements = components.filter(
+      (node) =>
+        node.tag === this.selectedIdentity?.tag &&
+        (!this.selectedIdentity.sourceFile ||
+          node.source?.file === this.selectedIdentity.sourceFile),
+    );
+    if (replacements.length === 1) {
+      const previousId = this.selectedId;
+      const replacement = replacements[0]!;
+      this.selectedId = replacement.id;
+      this.clearSelectionRecoveryTimer();
+      this.refreshSelectedTarget(replacement.id);
+      const record = this.bridge.recordPipeline({
+        stage: "target-snapshot",
+        source: "runtime",
+        kind: "selection.restore",
+        summary: `${replacement.displayName} selection restored after HMR`,
+        payload: {
+          previousComponentId: previousId,
+          componentId: replacement.id,
+          target: this.selectedTarget,
+        },
+      });
+      this.selectedPipelineId = record.id;
+      return;
+    }
+
+    if (this.selectionRecoveryTimer !== null) return;
+    this.selectionRecoveryTimer =
+      this.document.defaultView?.setTimeout(() => {
+        this.selectionRecoveryTimer = null;
+        const staleId = this.selectedId;
+        const identity = this.selectedIdentity;
+        this.selectedId = null;
+        this.selectedTarget = null;
+        this.selectedTemplateNodeId = null;
+        this.selectedIdentity = null;
+        const record = this.bridge.recordPipeline({
+          stage: "target-snapshot",
+          source: "runtime",
+          kind: "selection.invalidate",
+          summary: identity
+            ? `${identity.tag} selection invalidated after HMR`
+            : "Component selection invalidated after HMR",
+          payload: {
+            componentId: staleId,
+            reason:
+              replacements.length > 1
+                ? "ambiguous-replacement"
+                : "component-removed",
+          },
+        });
+        this.selectedPipelineId = record.id;
+        this.scheduleRender();
+      }, 80) ?? null;
+  }
+
+  private refreshSelectedTarget(componentId: string): void {
+    const templateNodeId = this.selectedTemplateNodeId;
+    if (!templateNodeId) return;
+    const host = this.bridge.getComponentHost(componentId);
+    const element = host ? findTemplateNode(host, templateNodeId) : null;
+    if (!host || !element) {
+      this.selectedTarget = null;
+      this.selectedTemplateNodeId = null;
+      const record = this.bridge.recordPipeline({
+        stage: "target-snapshot",
+        source: "runtime",
+        kind: "selection.invalidate",
+        summary: "Template-node selection invalidated after HMR",
+        payload: {
+          componentId,
+          templateNodeId,
+          reason: "template-node-removed",
+          componentSelectionPreserved: true,
+        },
+      });
+      this.selectedPipelineId = record.id;
+      return;
+    }
+    this.selectedTarget = createInspectorTargetSnapshot(
+      this.bridge,
+      componentId,
+      element,
+      host,
+    );
+  }
+
+  private clearSelectionRecoveryTimer(): void {
+    if (this.selectionRecoveryTimer === null) return;
+    this.document.defaultView?.clearTimeout(this.selectionRecoveryTimer);
+    this.selectionRecoveryTimer = null;
   }
 
   private async renderFromRpc(generation: number): Promise<void> {
@@ -623,13 +988,76 @@ export class DevtoolsPanel {
     compilerState: CompilerStateSnapshot,
   ): void {
     this.content.replaceChildren();
+    if (
+      this.selectedAppId &&
+      !snapshot.apps.some((app) => app.id === this.selectedAppId)
+    ) {
+      this.selectedAppId = null;
+      this.persistPreferences();
+    }
+    const componentNodes = this.selectedAppId
+      ? snapshot.components.filter(
+          (component) => component.appId === this.selectedAppId,
+        )
+      : snapshot.components;
+    const visibleDetail =
+      detail && componentNodes.some((component) => component.id === detail.id)
+        ? detail
+        : null;
 
     const header = this.document.createElement("div");
     header.className = "header";
     const title = this.document.createElement("strong");
-    title.textContent = `ElfUI DevTools (${snapshot.components.length})`;
+    title.textContent = `ElfUI DevTools (${componentNodes.length})`;
     const headerActions = this.document.createElement("div");
     headerActions.className = "header-actions";
+    const appSelector = this.document.createElement("select");
+    appSelector.className = "app-selector";
+    appSelector.setAttribute("aria-label", "Select ElfUI app");
+    const allApps = this.document.createElement("option");
+    allApps.value = "";
+    allApps.textContent = `All apps (${snapshot.apps.length})`;
+    appSelector.append(allApps);
+    for (const app of snapshot.apps) {
+      const option = this.document.createElement("option");
+      option.value = app.id;
+      option.textContent = app.label;
+      appSelector.append(option);
+    }
+    appSelector.value = this.selectedAppId ?? "";
+    appSelector.onchange = () => {
+      this.selectedAppId = appSelector.value || null;
+      if (
+        this.selectedId &&
+        !snapshot.components.some(
+          (component) =>
+            component.id === this.selectedId &&
+            (!this.selectedAppId || component.appId === this.selectedAppId),
+        )
+      )
+        this.clearComponentSelection();
+      this.persistPreferences();
+      this.render();
+    };
+    const theme = this.document.createElement("select");
+    theme.setAttribute("aria-label", "DevTools theme");
+    for (const [value, label] of [
+      ["system", "System theme"],
+      ["light", "Light theme"],
+      ["dark", "Dark theme"],
+    ] as const) {
+      const option = this.document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      theme.append(option);
+    }
+    theme.value = this.theme;
+    theme.onchange = () => {
+      if (!isPanelTheme(theme.value)) return;
+      this.theme = theme.value;
+      this.host.dataset.theme = this.theme;
+      this.persistPreferences();
+    };
     const dock = this.document.createElement("select");
     dock.setAttribute("aria-label", "Dock position");
     for (const [value, label] of [
@@ -660,12 +1088,57 @@ export class DevtoolsPanel {
     close.type = "button";
     close.textContent = "Close";
     close.onclick = () => this.setVisible(false);
-    headerActions.append(dock, fullscreen, close);
+    headerActions.append(appSelector, theme, dock, fullscreen, close);
     header.append(title, headerActions);
     this.content.append(header);
 
+    const navigation = this.document.createElement("nav");
+    navigation.className = "navigation";
+    navigation.setAttribute("role", "tablist");
+    navigation.setAttribute("aria-label", "DevTools views");
+    const panelTabs = [
+      ["components", "Components"],
+      ["timeline", "Timeline"],
+      ["compiler", "Compiler"],
+      ["pipeline", "Pipeline"],
+    ] as const;
+    for (const [tab, label] of panelTabs) {
+      const button = this.document.createElement("button");
+      button.type = "button";
+      button.id = `elfui-devtools-tab-${tab}`;
+      button.dataset.devtoolsTab = tab;
+      button.setAttribute("role", "tab");
+      button.setAttribute("aria-selected", String(tab === this.activeTab));
+      button.setAttribute("aria-controls", `elfui-devtools-view-${tab}`);
+      button.tabIndex = tab === this.activeTab ? 0 : -1;
+      button.textContent = label;
+      button.onclick = () => this.setActiveTab(tab, true);
+      button.onkeydown = (event) => {
+        const currentIndex = panelTabs.findIndex(
+          ([candidate]) => candidate === tab,
+        );
+        let nextIndex: number | null = null;
+        if (event.key === "ArrowLeft")
+          nextIndex = (currentIndex - 1 + panelTabs.length) % panelTabs.length;
+        else if (event.key === "ArrowRight")
+          nextIndex = (currentIndex + 1) % panelTabs.length;
+        else if (event.key === "Home") nextIndex = 0;
+        else if (event.key === "End") nextIndex = panelTabs.length - 1;
+        if (nextIndex === null) return;
+        event.preventDefault();
+        this.setActiveTab(panelTabs[nextIndex]![0], true);
+      };
+      navigation.append(button);
+    }
+    this.content.append(navigation);
+
     const components = this.document.createElement("section");
     components.className = "section";
+    components.id = "elfui-devtools-view-components";
+    components.dataset.elfuiDevtools = "components-view";
+    components.setAttribute("role", "tabpanel");
+    components.setAttribute("aria-labelledby", "elfui-devtools-tab-components");
+    components.hidden = this.activeTab !== "components";
     const componentTools = this.document.createElement("div");
     componentTools.className = "component-tools";
     const componentsTitle = this.document.createElement("p");
@@ -682,73 +1155,217 @@ export class DevtoolsPanel {
     const componentTree = this.document.createElement("div");
     componentTree.className = "component-tree";
     componentTree.dataset.elfuiDevtools = "component-tree";
+    componentTree.setAttribute("role", "tree");
+    componentTree.setAttribute("aria-label", "ElfUI component tree");
     components.append(componentTree);
 
-    const nodeById = new Map(
-      snapshot.components.map((node) => [node.id, node]),
-    );
+    const nodeById = new Map(componentNodes.map((node) => [node.id, node]));
     this.componentParentIds.clear();
-    for (const node of snapshot.components)
+    for (const node of componentNodes)
       this.componentParentIds.set(node.id, node.parentId);
-    const roots = snapshot.components.filter(
+    const roots = componentNodes.filter(
       (node) => !node.parentId || !nodeById.has(node.parentId),
     );
+    type VisibleComponentRow = {
+      node: ComponentNodeSnapshot;
+      depth: number;
+    };
+    let visibleRows: VisibleComponentRow[] = [];
+    let virtualSpacer: HTMLDivElement | null = null;
+    const componentButton = (id: string): HTMLButtonElement | undefined =>
+      Array.from(
+        componentTree.querySelectorAll<HTMLButtonElement>(
+          "button[data-component-id]",
+        ),
+      ).find((candidate) => candidate.dataset.componentId === id);
+    const focusVisibleComponent = (index: number): void => {
+      const target = visibleRows[index];
+      if (!target) return;
+      let button = componentButton(target.node.id);
+      if (!button && componentTree.dataset.virtualized === "true") {
+        componentTree.scrollTop = index * COMPONENT_TREE_ROW_HEIGHT;
+        componentTree.dispatchEvent(new Event("scroll"));
+        button = componentButton(target.node.id);
+      }
+      button?.focus();
+    };
+    const restoreComponentFocus = (id: string): void => {
+      queueMicrotask(() => componentButton(id)?.focus());
+    };
+
+    const createComponentRow = ({
+      node,
+      depth,
+    }: VisibleComponentRow): HTMLDivElement => {
+      const row = this.document.createElement("div");
+      row.className = "component-row";
+      row.setAttribute("role", "presentation");
+      row.style.paddingLeft = `${depth * 14}px`;
+      const toggle = this.document.createElement("button");
+      toggle.className = "tree-toggle";
+      toggle.type = "button";
+      const collapsed = this.collapsedComponentIds.has(node.id);
+      toggle.textContent = node.children.length ? (collapsed ? "▸" : "▾") : "·";
+      toggle.disabled = node.children.length === 0;
+      toggle.tabIndex = -1;
+      toggle.setAttribute(
+        "aria-label",
+        `${collapsed ? "Expand" : "Collapse"} <${node.tag}>`,
+      );
+      toggle.onclick = () => {
+        if (collapsed) this.collapsedComponentIds.delete(node.id);
+        else this.collapsedComponentIds.add(node.id);
+        renderComponentRows();
+      };
+      const button = this.document.createElement("button");
+      button.className = "component";
+      button.type = "button";
+      button.dataset.componentId = node.id;
+      button.textContent = `<${node.tag}>`;
+      button.setAttribute("role", "treeitem");
+      button.setAttribute("aria-level", String(depth + 1));
+      button.setAttribute("aria-selected", String(node.id === this.selectedId));
+      if (node.children.length)
+        button.setAttribute("aria-expanded", String(!collapsed));
+      button.setAttribute("aria-pressed", String(node.id === this.selectedId));
+      button.tabIndex =
+        node.id === this.selectedId ||
+        (!this.selectedId && visibleRows[0]?.node.id === node.id)
+          ? 0
+          : -1;
+      button.onclick = () => this.selectComponent(node.id, "component-tree");
+      button.onkeydown = (event) => {
+        const index = visibleRows.findIndex(
+          (entry) => entry.node.id === node.id,
+        );
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          focusVisibleComponent(index + 1);
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          focusVisibleComponent(index - 1);
+        } else if (event.key === "Home") {
+          event.preventDefault();
+          focusVisibleComponent(0);
+        } else if (event.key === "End") {
+          event.preventDefault();
+          focusVisibleComponent(visibleRows.length - 1);
+        } else if (event.key === "ArrowRight" && node.children.length) {
+          event.preventDefault();
+          if (collapsed) {
+            this.collapsedComponentIds.delete(node.id);
+            renderComponentRows();
+            restoreComponentFocus(node.id);
+          } else if (visibleRows[index + 1]?.depth === depth + 1) {
+            focusVisibleComponent(index + 1);
+          }
+        } else if (event.key === "ArrowLeft") {
+          if (node.children.length && !collapsed) {
+            event.preventDefault();
+            this.collapsedComponentIds.add(node.id);
+            renderComponentRows();
+            restoreComponentFocus(node.id);
+          } else if (node.parentId) {
+            event.preventDefault();
+            const parentIndex = visibleRows.findIndex(
+              (entry) => entry.node.id === node.parentId,
+            );
+            focusVisibleComponent(parentIndex);
+          }
+        }
+      };
+      row.append(toggle, button);
+      return row;
+    };
+
+    const renderVirtualWindow = (): void => {
+      if (!virtualSpacer) return;
+      virtualSpacer.replaceChildren();
+      const viewportHeight = componentTree.clientHeight || 280;
+      const start = Math.max(
+        0,
+        Math.floor(componentTree.scrollTop / COMPONENT_TREE_ROW_HEIGHT) -
+          COMPONENT_TREE_OVERSCAN,
+      );
+      const end = Math.min(
+        visibleRows.length,
+        Math.ceil(
+          (componentTree.scrollTop + viewportHeight) /
+            COMPONENT_TREE_ROW_HEIGHT,
+        ) + COMPONENT_TREE_OVERSCAN,
+      );
+      const fragment = this.document.createDocumentFragment();
+      for (let index = start; index < end; index += 1) {
+        const row = createComponentRow(visibleRows[index]!);
+        row.style.top = `${index * COMPONENT_TREE_ROW_HEIGHT}px`;
+        fragment.append(row);
+      }
+      virtualSpacer.append(fragment);
+      componentTree.dataset.renderedRows = String(end - start);
+    };
+
     const renderComponentRows = (): void => {
       componentTree.replaceChildren();
       const query = this.componentQuery.trim().toLowerCase();
-      const matches = (id: string): boolean => {
-        const node = nodeById.get(id);
-        if (!node) return false;
-        if (
-          !query ||
-          node.tag.toLowerCase().includes(query) ||
-          node.displayName.toLowerCase().includes(query) ||
-          node.id.toLowerCase().includes(query)
-        )
-          return true;
-        return node.children.some(matches);
-      };
-      const appendNode = (id: string, depth: number): void => {
-        const node = nodeById.get(id);
-        if (!node || !matches(id)) return;
-        const row = this.document.createElement("div");
-        row.className = "component-row";
-        row.style.paddingLeft = `${depth * 14}px`;
-        const toggle = this.document.createElement("button");
-        toggle.className = "tree-toggle";
-        toggle.type = "button";
-        const collapsed = this.collapsedComponentIds.has(id);
-        toggle.textContent = node.children.length
-          ? collapsed
-            ? "▸"
-            : "▾"
-          : "·";
-        toggle.disabled = node.children.length === 0;
-        toggle.setAttribute(
-          "aria-label",
-          `${collapsed ? "Expand" : "Collapse"} <${node.tag}>`,
-        );
-        toggle.onclick = () => {
-          if (collapsed) this.collapsedComponentIds.delete(id);
-          else this.collapsedComponentIds.add(id);
-          renderComponentRows();
-        };
-        const button = this.document.createElement("button");
-        button.className = "component";
-        button.type = "button";
-        button.textContent = `<${node.tag}>`;
-        button.setAttribute(
-          "aria-pressed",
-          String(node.id === this.selectedId),
-        );
-        button.onclick = () => this.selectComponent(node.id, "component-tree");
-        row.append(toggle, button);
-        componentTree.append(row);
-        if (!collapsed || query)
-          for (const childId of node.children) appendNode(childId, depth + 1);
-      };
-      for (const root of roots) appendNode(root.id, 0);
-      if (!componentTree.childElementCount) {
+      const includedIds = new Set<string>();
+      if (query) {
+        for (const node of componentNodes) {
+          if (
+            !node.tag.toLowerCase().includes(query) &&
+            !node.displayName.toLowerCase().includes(query) &&
+            !node.id.toLowerCase().includes(query)
+          )
+            continue;
+          let current: ComponentNodeSnapshot | undefined = node;
+          while (current && !includedIds.has(current.id)) {
+            includedIds.add(current.id);
+            current = current.parentId
+              ? nodeById.get(current.parentId)
+              : undefined;
+          }
+        }
+      }
+
+      visibleRows = [];
+      const stack = roots
+        .slice()
+        .reverse()
+        .map((node) => ({ node, depth: 0 }));
+      const visited = new Set<string>();
+      while (stack.length) {
+        const entry = stack.pop()!;
+        if (visited.has(entry.node.id)) continue;
+        visited.add(entry.node.id);
+        if (query && !includedIds.has(entry.node.id)) continue;
+        visibleRows.push(entry);
+        if (!query && this.collapsedComponentIds.has(entry.node.id)) continue;
+        for (
+          let index = entry.node.children.length - 1;
+          index >= 0;
+          index -= 1
+        ) {
+          const child = nodeById.get(entry.node.children[index]!);
+          if (child) stack.push({ node: child, depth: entry.depth + 1 });
+        }
+      }
+
+      const virtualized =
+        visibleRows.length >= COMPONENT_TREE_VIRTUALIZE_THRESHOLD;
+      componentTree.dataset.virtualized = String(virtualized);
+      if (virtualized) {
+        virtualSpacer = this.document.createElement("div");
+        virtualSpacer.className = "component-virtual-spacer";
+        virtualSpacer.style.height = `${visibleRows.length * COMPONENT_TREE_ROW_HEIGHT}px`;
+        componentTree.append(virtualSpacer);
+        renderVirtualWindow();
+      } else {
+        virtualSpacer = null;
+        const fragment = this.document.createDocumentFragment();
+        for (const row of visibleRows) fragment.append(createComponentRow(row));
+        componentTree.append(fragment);
+        componentTree.dataset.renderedRows = String(visibleRows.length);
+      }
+      if (!visibleRows.length) {
         const empty = this.document.createElement("p");
         empty.className = "pipeline-empty";
         empty.textContent = "No matching components.";
@@ -757,13 +1374,22 @@ export class DevtoolsPanel {
     };
     componentSearch.oninput = () => {
       this.componentQuery = componentSearch.value;
+      componentTree.scrollTop = 0;
       renderComponentRows();
     };
+    componentTree.onscroll = renderVirtualWindow;
     renderComponentRows();
     this.content.append(components);
 
     const timelineSection = this.document.createElement("section");
     timelineSection.className = "section";
+    timelineSection.id = "elfui-devtools-view-timeline";
+    timelineSection.setAttribute("role", "tabpanel");
+    timelineSection.setAttribute(
+      "aria-labelledby",
+      "elfui-devtools-tab-timeline",
+    );
+    timelineSection.hidden = this.activeTab !== "timeline";
     const timelineHeading = this.document.createElement("div");
     timelineHeading.className = "section-heading";
     const timelineTitle = this.document.createElement("p");
@@ -820,19 +1446,142 @@ export class DevtoolsPanel {
     timelineSection.append(timelineHeading, timeline);
     this.content.append(timelineSection);
 
-    this.renderCompilerState(compilerState);
-    this.renderPipeline(pipelineState);
+    const compilerSection = this.renderCompilerState(compilerState);
+    compilerSection.id = "elfui-devtools-view-compiler";
+    compilerSection.setAttribute("role", "tabpanel");
+    compilerSection.setAttribute(
+      "aria-labelledby",
+      "elfui-devtools-tab-compiler",
+    );
+    compilerSection.hidden = this.activeTab !== "compiler";
+    const pipelineSection = this.renderPipeline(pipelineState);
+    pipelineSection.id = "elfui-devtools-view-pipeline";
+    pipelineSection.setAttribute("role", "tabpanel");
+    pipelineSection.setAttribute(
+      "aria-labelledby",
+      "elfui-devtools-tab-pipeline",
+    );
+    pipelineSection.hidden = this.activeTab !== "pipeline";
 
-    if (!detail) return;
-    const detailNode = this.document.createElement("pre");
+    if (!visibleDetail) return;
+    const detailNode = this.document.createElement("section");
+    detailNode.className = "component-detail";
     detailNode.dataset.elfuiDevtools = "component-detail";
-    const source = detail.source
-      ? `${detail.source.file}:${detail.source.line}:${detail.source.column}`
+    detailNode.setAttribute("aria-label", "Component details");
+    const detailHeading = this.document.createElement("h3");
+    detailHeading.className = "detail-heading";
+    detailHeading.textContent = visibleDetail.displayName;
+    const detailGrid = this.document.createElement("div");
+    detailGrid.className = "detail-grid";
+    const source = visibleDetail.source
+      ? `${visibleDetail.source.file}:${visibleDetail.source.line}:${visibleDetail.source.column}`
       : "unavailable";
-    detailNode.textContent = `${detail.displayName}\nsource: ${source}\nprops: ${valueText(detail.props)}\nattrs: ${valueText(detail.attrs)}\nsetup: ${valueText(detail.setup)}\nexposed: ${valueText(detail.exposed)}\nupdates: ${detail.lifecycle.updateCount}`;
-    this.content.append(detailNode);
-    if (detail.source) {
-      const sourceLocation = detail.source;
+
+    const appendDetailValue = (
+      label: string,
+      value: string,
+      wide = false,
+    ): void => {
+      const block = this.document.createElement("section");
+      block.className = "detail-block";
+      if (wide) block.dataset.wide = "true";
+      const title = this.document.createElement("h4");
+      title.className = "detail-label";
+      title.textContent = label;
+      const content = this.document.createElement("pre");
+      content.className = "detail-value";
+      content.textContent = value;
+      block.append(title, content);
+      detailGrid.append(block);
+    };
+
+    appendDetailValue("Props", valueText(visibleDetail.props));
+    appendDetailValue("Attributes", valueText(visibleDetail.attrs));
+    appendDetailValue("Setup", valueText(visibleDetail.setup));
+    appendDetailValue("Expose", valueText(visibleDetail.exposed));
+    appendDetailValue("Source", source, true);
+    appendDetailValue(
+      "Lifecycle",
+      [
+        `updates: ${visibleDetail.lifecycle.updateCount}`,
+        `last update: ${visibleDetail.lifecycle.lastUpdatedAt ?? "never"}`,
+        `error: ${
+          visibleDetail.lifecycle.error
+            ? valueText(visibleDetail.lifecycle.error)
+            : "none"
+        }`,
+      ].join("\n"),
+      true,
+    );
+
+    const bindingsBlock = this.document.createElement("section");
+    bindingsBlock.className = "detail-block";
+    bindingsBlock.dataset.wide = "true";
+    const bindingsTitle = this.document.createElement("h4");
+    bindingsTitle.className = "detail-label";
+    bindingsTitle.textContent = `Bindings (${visibleDetail.bindings.length})`;
+    const bindings = this.document.createElement("ul");
+    bindings.className = "detail-list";
+    bindings.setAttribute("aria-label", "Component bindings");
+    for (const binding of visibleDetail.bindings) {
+      const item = this.document.createElement("li");
+      const location = binding.source
+        ? `${binding.source.file}:${binding.source.line}:${binding.source.column}`
+        : "source unavailable";
+      item.textContent = binding.name;
+      const metadata = this.document.createElement("small");
+      metadata.textContent = `${location} · ${binding.runCount} runs · ${binding.triggerCount} triggers${
+        binding.lastDuration === null ? "" : ` · ${binding.lastDuration}ms`
+      }`;
+      item.append(metadata);
+      bindings.append(item);
+    }
+    if (!visibleDetail.bindings.length) {
+      const empty = this.document.createElement("li");
+      empty.textContent = "No binding activity captured.";
+      bindings.append(empty);
+    }
+    bindingsBlock.append(bindingsTitle, bindings);
+    detailGrid.append(bindingsBlock);
+
+    const diagnosticsBlock = this.document.createElement("section");
+    diagnosticsBlock.className = "detail-block";
+    diagnosticsBlock.dataset.wide = "true";
+    const diagnosticsTitle = this.document.createElement("h4");
+    diagnosticsTitle.className = "detail-label";
+    diagnosticsTitle.textContent = `Diagnostics (${visibleDetail.diagnostics.length})`;
+    const diagnostics = this.document.createElement("ul");
+    diagnostics.className = "detail-list";
+    diagnostics.setAttribute("aria-label", "Component diagnostics");
+    for (const diagnostic of visibleDetail.diagnostics) {
+      const item = this.document.createElement("li");
+      item.dataset.severity = diagnostic.severity;
+      item.textContent = `${diagnostic.code}: ${diagnostic.message}`;
+      const context = [
+        diagnostic.fragment ? `fragment ${diagnostic.fragment}` : "",
+        diagnostic.source
+          ? `${diagnostic.source.file}:${diagnostic.source.line}:${diagnostic.source.column}`
+          : "",
+        diagnostic.hint ?? "",
+      ].filter(Boolean);
+      if (context.length) {
+        const metadata = this.document.createElement("small");
+        metadata.textContent = context.join(" · ");
+        item.append(metadata);
+      }
+      diagnostics.append(item);
+    }
+    if (!visibleDetail.diagnostics.length) {
+      const empty = this.document.createElement("li");
+      empty.textContent = "No compiler diagnostics.";
+      diagnostics.append(empty);
+    }
+    diagnosticsBlock.append(diagnosticsTitle, diagnostics);
+    detailGrid.append(diagnosticsBlock);
+    detailNode.append(detailHeading, detailGrid);
+    components.append(detailNode);
+    if (visibleDetail.source) {
+      const sourceLocation = visibleDetail.source;
       const openButton = this.document.createElement("button");
       openButton.className = "source-action";
       openButton.type = "button";
@@ -849,11 +1598,11 @@ export class DevtoolsPanel {
             openButton.disabled = false;
           });
       };
-      this.content.append(openButton);
+      detailNode.append(openButton);
     }
   }
 
-  private renderPipeline(state: PipelineStateSnapshot): void {
+  private renderPipeline(state: PipelineStateSnapshot): HTMLElement {
     const section = this.document.createElement("section");
     section.className = "section";
     section.dataset.elfuiDevtools = "pipeline";
@@ -888,7 +1637,7 @@ export class DevtoolsPanel {
       empty.textContent = "No pipeline records yet.";
       section.append(empty);
       this.content.append(section);
-      return;
+      return section;
     }
 
     const selected: PipelineRecord =
@@ -926,9 +1675,10 @@ export class DevtoolsPanel {
     payload.textContent = JSON.stringify(selected, null, 2);
     section.append(payload);
     this.content.append(section);
+    return section;
   }
 
-  private renderCompilerState(state: CompilerStateSnapshot): void {
+  private renderCompilerState(state: CompilerStateSnapshot): HTMLElement {
     const section = this.document.createElement("section");
     section.className = "section";
     section.dataset.elfuiDevtools = "compiler-state";
@@ -944,7 +1694,7 @@ export class DevtoolsPanel {
         "No compiler data. Pass devtools.compiler to elfuiMacroPlugin().";
       section.append(empty);
       this.content.append(section);
-      return;
+      return section;
     }
 
     const metadata = new Map<string, CompilerArtifact>();
@@ -1017,5 +1767,6 @@ export class DevtoolsPanel {
     );
     section.append(detail);
     this.content.append(section);
+    return section;
   }
 }

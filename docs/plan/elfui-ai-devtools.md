@@ -1,7 +1,7 @@
 # ElfUI AI DevTools 实施计划
 
 > 状态：实施中  
-> 当前基线：ElfUI `0.1.0-beta.13`、DevTools Protocol v2  
+> 当前基线：ElfUI `0.1.0-beta.15`、DevTools Protocol v2
 > 产品范围：ElfUI 开发环境中的传统 DevTools、视觉意图采集和 AI 辅助改码  
 > 非目标：低代码编辑器、手势直接生成源码、任意网页编辑器、生产环境在线改码
 
@@ -72,15 +72,15 @@ ElfUI 源码
 - 页面 Inspector、Shadow DOM 遍历和组件高亮。
 - 源码位置与受项目根限制的 open-in-editor。
 - Vite 开发态注入，生产构建不加载客户端。
-- 10 个测试文件、43 项测试的当前质量基线。
+- `pnpm verify`、`pnpm test:large-tree` 与 `pnpm test:browser` 组成当前质量基线。
 
-仍需优先修正：
+当前约束与下一阶段：
 
-- 旧对比计划冻结保留，当前 README、fixture 和实施计划已使用 beta.13 API。
-- Runtime source fallback 仍支持构造器 `__elfSource`，编译状态已消费 beta.13 Metadata v2。
+- 旧对比计划冻结保留；当前 README、fixture 和实施计划已同步 beta.15 API。
+- Runtime source fallback 仍支持构造器 `__elfSource`，编译状态已消费 beta.15 Metadata v2。
 - `@elfui/devtools-vite` 已接入 `onMetadata` / `onDiagnostics`、初始 endpoint 和 HMR 增量。
-- 缺少 Fragment ownership、模板节点级源码身份和编译诊断面板。
-- 面板尚未形成导航、App selector、键盘和完整 ARIA。
+- 公开 npm 依赖已同步到 ElfUI beta.15；本地协议按 beta.15 registry-first 约定实现。
+- P1 的 Fragment ownership、模板节点级源码身份、编译诊断、导航、键盘和 ARIA 已完成并纳入测试与 Chromium 门禁。
 - 没有视觉意图、AI 会话、模型配置和 Patch 审核协议。
 
 ## 四、包与模块边界
@@ -415,28 +415,34 @@ PatchProposal、文件 hash 和用户批准记录。
 
 ## P1：AI-ready 传统 DevTools
 
-- [ ] 完成导航、App selector、主题、最后 Tab 持久化。
+- [x] 完成导航、App selector、主题、最后 Tab 持久化。
 - [x] 完成组件树折叠、搜索、选中联动和详情面板。
-- [ ] 为大规模组件树增加基础虚拟化。
+- [x] 为大规模组件树增加基础虚拟化。
 - [x] Inspector 支持任意可定位模板元素，不局限 Custom Element host。
 - [x] 建立 template node/source range/runtime node 的开发态关联。
 - [x] 支持既有与后续创建的 open Shadow Root 观察边界。
-- [ ] 为 closed Shadow Root 建立框架级可观察通道。
-- [ ] 展示 Props、Attrs、Setup、Expose、Bindings、Source、Diagnostics。
-- [ ] 完成键盘检查模式、焦点管理和 ARIA。
-- [ ] 增加真实浏览器 E2E 和 5,000 节点性能 fixture。
+- [x] 为 closed Shadow Root 建立框架级可观察通道。
+- [x] 展示 Props、Attrs、Setup、Expose、Bindings、Source、Diagnostics。
+- [x] 完成键盘检查模式、焦点管理和 ARIA。
+- [x] 增加真实 Chromium E2E 门禁（`pnpm test:browser`）。
+- [x] 增加 5,000 节点性能 fixture 和预算门禁。
 
 阶段进展（2026-07-28）：
 
 - 新增 `InspectorTargetSnapshot`，记录 DOM path、元素身份、组件归属和 `template-node` / `component` / `unresolved` 三档源码精度。
 - Inspector 高亮具体内部元素，选择结果以 `inspector/element.select` 写入可观察 Data Pipeline 面板。
-- ElfUI compiler/runtime 内部协议使用非枚举 `Symbol.for("elfui.devtools.template-node")` 关联 sourceId、templateNodeId、Fragment 和绝对源码范围。
+- ElfUI beta.15 使用全局 Symbol 定位的共享 WeakMap 作为模板节点与 closed render root 的权威存储；beta.14 节点/host Symbol 仅作为兼容镜像，DevTools 按 registry-first 顺序读取。
 - 静态提升树通过开发态 clone helper 保留每个节点的 Symbol 信息；生产宏组件 bundle 已验证不包含标记字符串或 helper。
 - 生成器使用紧凑位置参数传递调试信息；100 组件生产 codegen 为 200.5 KB min / 2.47 KB gzip / 1.09 KB Brotli，开发 codegen 另设 250 KB min 上限。
 - 兼容扫描会递归进入既有 open Shadow Root，解决 DevTools 晚于组件挂载时只发现外层应用的问题。
 - 桌面 ECharts fixture 真实验收显示 `<elf-app>` 与 `<elf-dashboard>` 两级组件，元素选择具备 `template-node` 精度，浏览器无错误或警告。
 - 组件树按逻辑父子关系渲染，支持折叠、祖先保留搜索、选中态和 Props/Attrs/Setup/Expose/Source 详情联动。
-- closed Shadow Root、自动化浏览器 E2E、HMR 选区恢复和大树性能仍在后续任务中。
+- HMR 卸载/重挂事件按微任务合并；同 tag 与 source 的唯一替代组件会恢复组件和模板节点选区，无替代或多候选时会写入明确的 `selection.invalidate` 管线记录。
+- closed Shadow Root 通过 `Symbol.for("elfui.devtools.render-root-registry")` 建立仅开发态权威通道，并兼容旧 host Symbol；Inspector 与兼容扫描可以进入，生产 Vite bundle 验证不包含两个 registry key。
+- 组件树超过 300 行自动启用固定行高虚拟化；搜索和祖先展开改为迭代算法，5,000 节点 fixture 对初次渲染、实际 DOM 行数与搜索耗时设预算。
+- 面板已增加 Components/Timeline/Compiler/Pipeline 导航、App selector、system/light/dark 主题和最后 Tab/App/主题持久化。
+- Inspector hover 的布局读取已合并到 animation frame；`pnpm test:browser` 使用真实 Chromium 自动验证 25 次同步 hover 只触发 1 次布局读取，并覆盖 registry-only closed root 点选和 HMR `selection.restore`。
+- 自动化真实 Chromium 门禁由 `fixtures/p1-browser-gate` 和 `scripts/verify-browser-gate.mjs` 提供。
 
 退出标准：
 
@@ -584,12 +590,13 @@ Tauri 不是 MVP 前置条件。只有 Vite 页面内闭环证明有价值后，
 
 ## 十二、立即执行顺序
 
-P0 已完成。下一步只推进 P1，不提前开发模型 UI 或代码 Agent：
+P0 与 P1 已完成。提交当前已验证工作后推进 P2；不提前接入模型 API 或代码 Agent：
 
 1. 建立 template node/source range/runtime node 的关联协议与最小 fixture。（已完成）
 2. 将 Inspector 从 Custom Element host 扩展到任意可定位模板元素。（已完成）
 3. 完成组件树搜索、折叠、选中联动和详情面板。（已完成）
-4. 增加 HMR 后选区恢复/失效规则及真实浏览器 E2E。
-5. 增加 5,000 节点性能 fixture，并落实 Inspector 与组件树性能预算。
+4. 增加 HMR 后选区恢复/失效规则。（已完成）
+5. 增加 5,000 节点性能 fixture，并落实组件树性能预算。（已完成）
+6. 运行 `pnpm test:browser`，通过真实 Chromium 验证 closed Shadow Root、HMR 选区恢复与 Inspector hover animation-frame 合并预算。（已完成）
 
-没有稳定 DOM/组件/源码关联前，不开始截图标注和 AI。
+提交当前 P1 工作并完成浏览器门禁复核后，开始截图标注和 Visual Intent；模型 API 与代码 Agent 仍保持在后续阶段。

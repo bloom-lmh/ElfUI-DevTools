@@ -1,5 +1,10 @@
+// @vitest-environment node
+
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { elfuiMacroPlugin } from "@elfui/vite-plugin";
+import { build, type Plugin } from "vite";
 import { describe, expect, it, vi } from "vitest";
 import {
   DEVTOOLS_COMPILER_STATE_ENDPOINT,
@@ -39,6 +44,64 @@ describe("elfuiDevtools", () => {
     ]);
     expect(elfuiDevtools({ enabled: false }).transformIndexHtml).toBeDefined();
   });
+
+  it("keeps development registries out of a production Vite build", async () => {
+    const root = await mkdtemp(
+      join(process.cwd(), ".elfui-devtools-production-"),
+    );
+    const generatedChunks: string[] = [];
+    try {
+      await mkdir(join(root, "src"));
+      await writeFile(
+        join(root, "index.html"),
+        '<div id="app"></div><script type="module" src="/src/main.ts"></script>',
+      );
+      await writeFile(
+        join(root, "src", "main.ts"),
+        `import { defineHtml } from "@elfui/core";
+
+export const ProductionProbe = defineHtml(\`
+  <article><button type="button">Save</button></article>
+\`);
+
+customElements.define("elf-production-probe", ProductionProbe);
+document.querySelector("#app")?.append(document.createElement("elf-production-probe"));
+`,
+      );
+      const devtools = elfuiDevtools();
+      const captureOutput: Plugin = {
+        name: "capture-production-output",
+        generateBundle(_options, bundle) {
+          for (const output of Object.values(bundle))
+            if (output.type === "chunk") generatedChunks.push(output.code);
+        },
+      };
+
+      await build({
+        root,
+        logLevel: "silent",
+        plugins: [
+          elfuiMacroPlugin({
+            ...devtools.compiler,
+            projectRoot: process.cwd(),
+            templateTypeCheck: false,
+          }),
+          devtools,
+          captureOutput,
+        ],
+        // ElfUI's production contract replaces the development-only global
+        // before Rollup tree-shakes compiler/runtime debug branches.
+        define: { __DEV__: false },
+        build: { write: false },
+      });
+
+      const output = generatedChunks.join("\n");
+      expect(output).not.toContain("elfui.devtools.template-node-registry");
+      expect(output).not.toContain("elfui.devtools.render-root-registry");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 15_000);
 
   it("resolves client entries from the plugin package in strict dependency layouts", async () => {
     const plugin = elfuiDevtools();

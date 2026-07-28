@@ -1,12 +1,20 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createDevtoolsBridge } from "./bridge";
-import { installElfUIAdapter } from "./elfui-adapter";
+import { getElfUIRenderRoot, installElfUIAdapter } from "./elfui-adapter";
 
 const INSTANCE_KEY = Symbol.for("elfui.instance");
+const RENDER_ROOT_REGISTRY_KEY = Symbol.for(
+  "elfui.devtools.render-root-registry",
+);
 
 describe("installElfUIAdapter", () => {
-  afterEach(() => document.body.replaceChildren());
+  afterEach(() => {
+    document.body.replaceChildren();
+    delete (globalThis as unknown as Record<symbol, unknown>)[
+      RENDER_ROOT_REGISTRY_KEY
+    ];
+  });
 
   it("discovers ElfUI hosts and follows DOM lifecycle changes", async () => {
     class Counter extends HTMLElement {
@@ -125,5 +133,67 @@ describe("installElfUIAdapter", () => {
     expect(childNode?.parentId).toBe(parentNode?.id);
     expect(parentNode?.children).toEqual([childNode?.id]);
     adapter.disconnect();
+  });
+
+  it("discovers components through the registry-only closed-root channel", () => {
+    class ClosedParent extends HTMLElement {
+      public static __elfDefinition = {
+        tag: "elf-adapter-closed-parent",
+        props: {},
+        shadow: "closed" as const,
+      };
+      public constructor() {
+        super();
+        (this as unknown as Record<symbol, unknown>)[INSTANCE_KEY] = {};
+      }
+    }
+    class ClosedChild extends HTMLElement {
+      public static __elfDefinition = {
+        tag: "elf-adapter-closed-child",
+        props: {},
+        shadow: "open" as const,
+      };
+      public constructor() {
+        super();
+        (this as unknown as Record<symbol, unknown>)[INSTANCE_KEY] = {};
+      }
+    }
+    customElements.define("elf-adapter-closed-parent", ClosedParent);
+    customElements.define("elf-adapter-closed-child", ClosedChild);
+    const parent = document.createElement("elf-adapter-closed-parent");
+    const root = parent.attachShadow({ mode: "closed" });
+    const renderRoots = new WeakMap<HTMLElement, ShadowRoot>();
+    renderRoots.set(parent, root);
+    Object.defineProperty(globalThis, RENDER_ROOT_REGISTRY_KEY, {
+      value: renderRoots,
+      configurable: true,
+    });
+    root.append(document.createElement("elf-adapter-closed-child"));
+    document.body.append(parent);
+
+    const bridge = createDevtoolsBridge();
+    const adapter = installElfUIAdapter(bridge);
+    const components = bridge.getSnapshot().components;
+    const parentNode = components.find(
+      (component) => component.tag === "elf-adapter-closed-parent",
+    );
+    const childNode = components.find(
+      (component) => component.tag === "elf-adapter-closed-child",
+    );
+
+    expect(components).toHaveLength(2);
+    expect(childNode?.parentId).toBe(parentNode?.id);
+    adapter.disconnect();
+  });
+
+  it("falls back to the beta.14 closed-root Symbol mirror", () => {
+    const host = document.createElement("elf-legacy-closed-root");
+    const root = host.attachShadow({ mode: "closed" });
+    Object.defineProperty(host, Symbol.for("elfui.devtools.render-root"), {
+      value: root,
+      configurable: true,
+    });
+
+    expect(getElfUIRenderRoot(host)).toBe(root);
   });
 });

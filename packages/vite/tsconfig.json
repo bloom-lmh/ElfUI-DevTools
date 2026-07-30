@@ -4,8 +4,11 @@
     "rootDir": "./src",
     "outDir": "./dist",
     "composite": true,
-    "paths": { "@elfui/devtools-client": ["../client/src/index.ts"] }
+    "paths": {
+      "@elfui/devtools-ai": ["../ai/src/index.ts"],
+      "@elfui/devtools-client": ["../client/src/index.ts"]
+    }
   },
-  "references": [{ "path": "../client" }],
+  "references": [{ "path": "../ai" }, { "path": "../client" }],
   "include": ["src/**/*.ts"]
 }

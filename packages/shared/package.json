@@ -15,5 +15,8 @@
     "dist"
   ],
   "sideEffects": false,
+  "dependencies": {
+    "@elfui/devtools-visual-intent": "workspace:*"
+  },
   "license": "MIT"
 }

@@ -2,8 +2,10 @@
   "extends": "./tsconfig.base.json",
   "files": [],
   "references": [
+    { "path": "./packages/visual-intent" },
     { "path": "./packages/shared" },
     { "path": "./packages/runtime" },
+    { "path": "./packages/ai" },
     { "path": "./packages/client" },
     { "path": "./packages/vite" }
   ]

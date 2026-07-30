@@ -1,6 +1,8 @@
 const entries = [
+  "../packages/visual-intent/dist/index.js",
   "../packages/shared/dist/index.js",
   "../packages/runtime/dist/index.js",
+  "../packages/ai/dist/index.js",
   "../packages/client/dist/index.js",
   "../packages/vite/dist/index.js",
 ];

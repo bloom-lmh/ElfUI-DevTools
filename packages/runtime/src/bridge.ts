@@ -196,10 +196,7 @@ const compilerArtifactSummary = (artifact: CompilerArtifact): string => {
     const components = Array.isArray(metadata?.components)
       ? metadata.components.length
       : 0;
-    const fragments = Array.isArray(metadata?.fragments)
-      ? metadata.fragments.length
-      : 0;
-    return `${artifact.sourceId}: ${components} component${components === 1 ? "" : "s"}, ${fragments} fragment${fragments === 1 ? "" : "s"}`;
+    return `${artifact.sourceId}: ${components} component${components === 1 ? "" : "s"}`;
   }
   const count = Array.isArray(artifact.payload) ? artifact.payload.length : 0;
   return `${artifact.sourceId}: ${count} compiler diagnostic${count === 1 ? "" : "s"}`;
@@ -592,9 +589,6 @@ export class ElfUIDevtoolsBridge implements DevtoolsRpcHandler {
                 : "Compiler diagnostic",
             ...(typeof diagnostic.hint === "string"
               ? { hint: diagnostic.hint }
-              : {}),
-            ...(typeof diagnostic.fragment === "string"
-              ? { fragment: diagnostic.fragment }
               : {}),
             ...(line !== undefined && column !== undefined
               ? { source: { file, line, column } }

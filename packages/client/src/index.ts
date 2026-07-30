@@ -5,10 +5,10 @@ import {
 import {
   ELFUI_TEMPLATE_NODE_DEBUG_KEY,
   type InspectorTargetSnapshot,
-  type VisualTarget,
   type SourceLocation,
   type TemplateNodeDebugInfo,
 } from "@elfui/devtools-shared";
+import type { VisualTarget } from "@elfui/devtools-visual-intent";
 
 export interface ComponentInspectorOptions {
   document?: Document;
@@ -130,10 +130,16 @@ const elementSegment = (element: Element): string => {
   const id = element.getAttribute("id");
   if (id) return `${element.localName}#${id}`;
   const parent = element.parentElement;
-  if (!parent) return element.localName;
-  const siblings = Array.from(parent.children).filter(
+  const root = element.getRootNode();
+  const children = parent
+    ? Array.from(parent.children)
+    : root instanceof ShadowRoot
+      ? Array.from(root.children)
+      : [];
+  const siblings = children.filter(
     (candidate) => candidate.localName === element.localName,
   );
+  if (!siblings.length) return element.localName;
   const index = siblings.indexOf(element);
   return siblings.length > 1
     ? `${element.localName}:nth-of-type(${index + 1})`
@@ -326,10 +332,11 @@ export class ComponentInspector {
       ? view.cancelAnimationFrame.bind(view)
       : () => undefined;
     this.overlay = this.document.createElement("div");
+    this.overlay.dataset.elfuiDevtools = "inspector-overlay";
     this.overlay.setAttribute("aria-hidden", "true");
     this.overlay.style.cssText = [
       "position:fixed",
-      "z-index:2147483647",
+      "z-index:2147483646",
       "display:none",
       "pointer-events:none",
       "box-sizing:border-box",
@@ -504,17 +511,32 @@ export class ComponentInspector {
 
 export { DevtoolsPanel } from "./panel.js";
 export {
+  createAIExecutionClient,
+  withoutSourceContent,
+  type AIExecutionClient,
+} from "./ai-execution.js";
+export {
   ingestCompilerArtifact,
   ingestCompilerSnapshot,
   installElfUIDevtools,
 } from "./bootstrap.js";
-export { openSourceInEditor, type OpenSourceInEditor } from "./source.js";
+export {
+  createSourceContextReader,
+  openSourceInEditor,
+  type OpenSourceInEditor,
+  type ReadSourceContext,
+} from "./source.js";
 export {
   DevtoolsRpcClient,
   DevtoolsRpcClientError,
   type DevtoolsRpcClientOptions,
 } from "./rpc-client.js";
-export { VisualIntentSession, VisualToolsController } from "./visual.js";
+export {
+  DEVTOOLS_VISUAL_DRAFT_STORAGE_KEY,
+  inferVisualRelations,
+  VisualIntentSession,
+  VisualToolsController,
+} from "./visual.js";
 export type {
   VisualIntentSessionOptions,
   VisualToolsControllerOptions,
@@ -525,6 +547,7 @@ export {
   DisplayMediaScreenshotAdapter,
   projectScreenshotCapture,
   ScreenshotController,
+  toScreenshotMetadata,
 } from "./context.js";
 export type {
   AIContextBuilderOptions,
@@ -535,5 +558,6 @@ export type {
   ScreenshotCaptureAdapter,
   ScreenshotCaptureInput,
   ScreenshotCaptureResult,
+  ScreenshotControllerCaptureOptions,
   ScreenshotControllerOptions,
 } from "./context.js";

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_AI_CONTEXT_BUDGET,
   DEVTOOLS_AI_CHANGE_SCHEMA_VERSION,
   DEVTOOLS_VISUAL_SCHEMA_VERSION,
   serialize,
@@ -90,8 +91,24 @@ describe("Visual Intent protocol", () => {
       before: { x: 0, y: 0, width: 200, height: 100 },
       desired: { x: 0, y: 0, width: 240, height: 100 },
     };
+    const motionIntent = {
+      id: "intent:motion",
+      type: "motion" as const,
+      targetId: "target:card",
+      desired: {
+        kind: "transition" as const,
+        trigger: "hover" as const,
+        properties: ["opacity", "transform"],
+        durationMs: 240,
+        delayMs: 20,
+        easing: "ease-out",
+        respectReducedMotion: true,
+      },
+    };
     expect(styleIntent.type).toBe("style");
     expect(resizeIntent.type).toBe("resize");
+    expect(JSON.parse(JSON.stringify(motionIntent))).toEqual(motionIntent);
+    expect(JSON.stringify(motionIntent)).not.toContain("CSSStyle");
   });
 
   it("round-trips a provider-neutral AI change request as JSON", () => {
@@ -99,7 +116,7 @@ describe("Visual Intent protocol", () => {
       schemaVersion: DEVTOOLS_AI_CHANGE_SCHEMA_VERSION,
       id: "ai-change:1",
       conversationId: "conversation:1",
-      project: { framework: "elfui", frameworkVersion: "0.1.0-beta.15" },
+      project: { framework: "elfui", frameworkVersion: "0.1.0-beta.18" },
       page: {
         url: "http://localhost:5173/card",
         route: "/card",
@@ -132,6 +149,21 @@ describe("Visual Intent protocol", () => {
         preserveResponsiveLayout: true,
         preserveAccessibility: true,
         preservePublicAPI: true,
+      },
+      governance: {
+        budget: DEFAULT_AI_CONTEXT_BUDGET,
+        usage: {
+          sourceBlocks: 0,
+          sourceCharacters: 0,
+          screenshotCount: 1,
+          screenshotBytes: 2048,
+          userMessageCharacters: 0,
+        },
+        approvedSourceIds: [],
+        pendingSourceApprovals: [],
+        omissions: [],
+        redactions: [],
+        userMessageTruncated: false,
       },
     };
 

@@ -8,11 +8,11 @@ importers:
   .:
     devDependencies:
       "@elfui/core":
-        specifier: 0.1.0-beta.15
-        version: 0.1.0-beta.15
+        specifier: 0.1.0-beta.20
+        version: 0.1.0-beta.20
       "@elfui/vite-plugin":
-        specifier: 0.1.0-beta.15
-        version: 0.1.0-beta.15
+        specifier: 0.1.0-beta.20
+        version: 0.1.0-beta.20
       "@eslint/js":
         specifier: 9.39.1
         version: 9.39.1
@@ -44,14 +44,26 @@ importers:
         specifier: 4.0.15
         version: 4.0.15(@types/node@24.10.1)(jsdom@27.1.0)
 
+  packages/ai:
+    dependencies:
+      "@elfui/devtools-shared":
+        specifier: workspace:*
+        version: link:../shared
+
   packages/client:
     dependencies:
+      "@elfui/devtools-ai":
+        specifier: workspace:*
+        version: link:../ai
       "@elfui/devtools-runtime":
         specifier: workspace:*
         version: link:../runtime
       "@elfui/devtools-shared":
         specifier: workspace:*
         version: link:../shared
+      "@elfui/devtools-visual-intent":
+        specifier: workspace:*
+        version: link:../visual-intent
 
   packages/runtime:
     dependencies:
@@ -59,10 +71,19 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
-  packages/shared: {}
+  packages/shared:
+    dependencies:
+      "@elfui/devtools-visual-intent":
+        specifier: workspace:*
+        version: link:../visual-intent
+
+  packages/visual-intent: {}
 
   packages/vite:
     dependencies:
+      "@elfui/devtools-ai":
+        specifier: workspace:*
+        version: link:../ai
       "@elfui/devtools-client":
         specifier: workspace:*
         version: link:../client
@@ -155,46 +176,46 @@ packages:
       }
     engines: { node: ">=20.19.0" }
 
-  "@elfui/compiler-template@0.1.0-beta.15":
+  "@elfui/compiler-template@0.1.0-beta.20":
     resolution:
       {
-        integrity: sha512-hAmErncOZsPEN5pEh0EGf+JR3cBCHhpXYYxYFXUsur4yCMWvQXPmkBNyOH0oJyH0H7bp3P3he5p1mRhg7StXBw==,
+        integrity: sha512-mW29MPvyYSVbCm5GAWhN44j7TJVOQX00ixCQB5Po6B1UySmnzeZWr1/8k7F6nhj0BGFY5Ld1SqCe3242wL8VkA==,
       }
 
-  "@elfui/compiler@0.1.0-beta.15":
+  "@elfui/compiler@0.1.0-beta.20":
     resolution:
       {
-        integrity: sha512-wdGXsgpvBss/VtcRovhEtFgXEIxbWN5ZPHuEO0ZO1Bq1KHqCVQrvsjKzt+3dfYTmtdLzgOcq9cgp7p4A8Fu3vA==,
+        integrity: sha512-W1Zp1EkwsUqUnadU7zOddKYocSPJ88AO/auTy0L1USLbYk64ljai0Rl16ewQCxWR1ohlYJRTQ/3zZQU7kNNasw==,
       }
 
-  "@elfui/core@0.1.0-beta.15":
+  "@elfui/core@0.1.0-beta.20":
     resolution:
       {
-        integrity: sha512-Cq2RNGrkRf11hfnPY11Q3RrbzqxEumw8eF/Swr0O95QMklBSS0JfbZhNgZJusXKxI6UlUbhQoxmrlYenhS7ZMw==,
+        integrity: sha512-w+otxJc0jGebbQhRlgWVi+a/hhYuC7lwn7/Xdg5pK3HcC7xpx3krjMXkF11IYXx7Fe72qDG8U1im7/hb85qkfA==,
       }
 
-  "@elfui/reactivity@0.1.0-beta.15":
+  "@elfui/reactivity@0.1.0-beta.20":
     resolution:
       {
-        integrity: sha512-7WpDO67a9iqzqlkBP8upIeF+PJ950JQczPttHSG1fVPfov2eW51WaJtN3lNArlNhgvdHGrXQ0/rjGgsPvvmh0A==,
+        integrity: sha512-nvVBKT3kouVY7KIWvFTU+HySTicS8mqf701M+y1DfCA6liIml5hDqBs+YJpyF3UucRChsdHZz0bUkJKOfqzJBQ==,
       }
 
-  "@elfui/runtime@0.1.0-beta.15":
+  "@elfui/runtime@0.1.0-beta.20":
     resolution:
       {
-        integrity: sha512-u8nwAOYnfIAN8MZ2Fh69W/S/Ak2382VDiNNbmZ4b+ECGLqHX6O55GGJ/d43UxY514RA27BkvRYJX2kFj3GOmMw==,
+        integrity: sha512-w1aJulS0zipvmel4+NEZYpwdpKpYtibNX6x36IA99UkuORcjDyoNSeCJSfpHNFTYqE7hNEVkyCPgvjs/2IP3dw==,
       }
 
-  "@elfui/shared@0.1.0-beta.15":
+  "@elfui/shared@0.1.0-beta.20":
     resolution:
       {
-        integrity: sha512-oqOSggm0DmxYeml6Y0t0kgMFDk7Zr0Ck4NO9RT0I34PJqJgqzc+XDzJl3aCIC0JWsdsGHVtymFlaDNVXLrukAg==,
+        integrity: sha512-dtnhyIy5JPq7vmhvv2Zmrw4YuIMLO8OT3diIXlP/m9wg6jWJ2mJWfKlaIyJlubckVC91YlmQ7JoCLqFweM26PQ==,
       }
 
-  "@elfui/vite-plugin@0.1.0-beta.15":
+  "@elfui/vite-plugin@0.1.0-beta.20":
     resolution:
       {
-        integrity: sha512-qkynszele+cj4O2JAyifwpcTDrXGdwTFNfWmFZG+bs1VBdVTsavZBWh3cIXbOmGlpE9gD5eR2Y5RFdx6dyyyoQ==,
+        integrity: sha512-76KKjDOkPV2KnDnOCF+y2lSRHETYQu0RelhCnTs0cQ7mXNfy7ocP1zRiWY+yKWscZR2Jv21cjvl2MmakTpbzDw==,
       }
 
   "@esbuild/aix-ppc64@0.28.1":
@@ -2136,38 +2157,33 @@ snapshots:
 
   "@csstools/css-tokenizer@4.0.0": {}
 
-  "@elfui/compiler-template@0.1.0-beta.15":
-    dependencies:
-      "@elfui/shared": 0.1.0-beta.15
+  "@elfui/compiler-template@0.1.0-beta.20": {}
 
-  "@elfui/compiler@0.1.0-beta.15":
+  "@elfui/compiler@0.1.0-beta.20":
     dependencies:
-      "@elfui/compiler-template": 0.1.0-beta.15
-      "@elfui/reactivity": 0.1.0-beta.15
-      "@elfui/runtime": 0.1.0-beta.15
-      "@elfui/shared": 0.1.0-beta.15
+      "@elfui/compiler-template": 0.1.0-beta.20
+      "@elfui/reactivity": 0.1.0-beta.20
+      "@elfui/runtime": 0.1.0-beta.20
       typescript: 5.9.3
 
-  "@elfui/core@0.1.0-beta.15":
+  "@elfui/core@0.1.0-beta.20":
     dependencies:
-      "@elfui/reactivity": 0.1.0-beta.15
-      "@elfui/runtime": 0.1.0-beta.15
-      "@elfui/shared": 0.1.0-beta.15
+      "@elfui/reactivity": 0.1.0-beta.20
+      "@elfui/runtime": 0.1.0-beta.20
 
-  "@elfui/reactivity@0.1.0-beta.15":
+  "@elfui/reactivity@0.1.0-beta.20":
     dependencies:
-      "@elfui/shared": 0.1.0-beta.15
+      "@elfui/shared": 0.1.0-beta.20
 
-  "@elfui/runtime@0.1.0-beta.15":
+  "@elfui/runtime@0.1.0-beta.20":
     dependencies:
-      "@elfui/reactivity": 0.1.0-beta.15
-      "@elfui/shared": 0.1.0-beta.15
+      "@elfui/reactivity": 0.1.0-beta.20
 
-  "@elfui/shared@0.1.0-beta.15": {}
+  "@elfui/shared@0.1.0-beta.20": {}
 
-  "@elfui/vite-plugin@0.1.0-beta.15":
+  "@elfui/vite-plugin@0.1.0-beta.20":
     dependencies:
-      "@elfui/compiler": 0.1.0-beta.15
+      "@elfui/compiler": 0.1.0-beta.20
 
   "@esbuild/aix-ppc64@0.28.1":
     optional: true

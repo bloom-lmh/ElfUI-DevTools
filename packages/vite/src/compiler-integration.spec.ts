@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { DEVTOOLS_COMPILER_UPDATE_EVENT, elfuiDevtools } from "./index";
 
-describe("ElfUI beta.13 compiler integration", () => {
-  it("captures real Metadata v2, Fragment source ownership, and diagnostics", () => {
+describe("ElfUI beta.18 compiler integration", () => {
+  it("captures real Metadata v2 component ownership and diagnostics", () => {
     const devtools = elfuiDevtools();
     const send = vi.fn();
     const server = {
@@ -29,19 +29,11 @@ describe("ElfUI beta.13 compiler integration", () => {
     const id = resolve(process.cwd(), "fixtures/MetadataProbe.ts");
     const result = compiler.transform?.(
       `/// <!-- @elf component -->
-import { defineFragment, defineHtml } from "@elfui/core";
-
-interface BadgeProps {
-  label: string;
-}
-
-const Badge = defineFragment<BadgeProps>(
-  ({ label }) => \`<span class="badge">\${label}</span>\`
-);
+import { defineHtml } from "@elfui/core";
 
 export const MetadataProbe = defineHtml(\`
   <article>
-    <Badge label="ready" />
+    <span class="badge">ready</span>
   </article>
 \`);
 `,
@@ -75,12 +67,6 @@ export const MetadataProbe = defineHtml(\`
         name: string;
         source: { line: number; column: number };
       }>;
-      fragments: Array<{
-        name: string;
-        ownerComponents: string[];
-        identity: string;
-        source: { line: number; column: number };
-      }>;
     };
     expect(metadata).toMatchObject({
       schemaVersion: 2,
@@ -88,14 +74,6 @@ export const MetadataProbe = defineHtml(\`
       components: [
         {
           name: "elf-metadata-probe",
-          source: { line: expect.any(Number), column: expect.any(Number) },
-        },
-      ],
-      fragments: [
-        {
-          name: "Badge",
-          ownerComponents: ["elf-metadata-probe"],
-          identity: "not-applicable",
           source: { line: expect.any(Number), column: expect.any(Number) },
         },
       ],

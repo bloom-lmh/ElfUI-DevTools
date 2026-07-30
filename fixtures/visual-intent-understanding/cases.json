@@ -1,0 +1,1359 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "style-01",
+      "category": "style",
+      "target": {
+        "id": "visual-target:save-button",
+        "tag": "button",
+        "text": "Save",
+        "sourceId": "src/SaveButton.ts",
+        "templateNodeId": "src/SaveButton.ts:button:12:5"
+      },
+      "intent": {
+        "id": "visual-intent:style:save-button",
+        "type": "style",
+        "targetId": "visual-target:save-button",
+        "before": { "background-color": "#ffffff" },
+        "desired": { "background-color": "#0f766e" }
+      },
+      "expectedFacts": [
+        "visual-target:save-button",
+        "text=\"Save\"",
+        "sourceId=src/SaveButton.ts",
+        "templateNodeId=src/SaveButton.ts:button:12:5",
+        "background-color=#0f766e"
+      ]
+    },
+    {
+      "id": "style-02",
+      "category": "style",
+      "target": {
+        "id": "visual-target:cancel-button",
+        "tag": "button",
+        "text": "Cancel",
+        "sourceId": "src/DialogActions.ts",
+        "templateNodeId": "src/DialogActions.ts:button:18:7"
+      },
+      "intent": {
+        "id": "visual-intent:style:cancel-button",
+        "type": "style",
+        "targetId": "visual-target:cancel-button",
+        "before": { "color": "#64748b" },
+        "desired": { "color": "#b91c1c" }
+      },
+      "expectedFacts": [
+        "visual-target:cancel-button",
+        "text=\"Cancel\"",
+        "sourceId=src/DialogActions.ts",
+        "color=#b91c1c"
+      ]
+    },
+    {
+      "id": "style-03",
+      "category": "style",
+      "target": {
+        "id": "visual-target:toolbar",
+        "tag": "nav",
+        "text": "Editor tools",
+        "sourceId": "src/EditorToolbar.ts",
+        "templateNodeId": "src/EditorToolbar.ts:nav:7:3"
+      },
+      "intent": {
+        "id": "visual-intent:style:toolbar",
+        "type": "style",
+        "targetId": "visual-target:toolbar",
+        "before": { "gap": "8px" },
+        "desired": { "gap": "12px" }
+      },
+      "expectedFacts": [
+        "visual-target:toolbar",
+        "sourceId=src/EditorToolbar.ts",
+        "gap=12px"
+      ]
+    },
+    {
+      "id": "style-04",
+      "category": "style",
+      "target": {
+        "id": "visual-target:summary-card",
+        "tag": "article",
+        "text": "Weekly summary",
+        "sourceId": "src/SummaryCard.ts",
+        "templateNodeId": "src/SummaryCard.ts:article:5:3"
+      },
+      "intent": {
+        "id": "visual-intent:style:summary-card",
+        "type": "style",
+        "targetId": "visual-target:summary-card",
+        "before": { "padding": "16px" },
+        "desired": { "padding": "24px" }
+      },
+      "expectedFacts": [
+        "visual-target:summary-card",
+        "text=\"Weekly summary\"",
+        "padding=24px"
+      ]
+    },
+    {
+      "id": "style-05",
+      "category": "style",
+      "target": {
+        "id": "visual-target:user-avatar",
+        "tag": "img",
+        "sourceId": "src/UserAvatar.ts",
+        "templateNodeId": "src/UserAvatar.ts:img:9:5"
+      },
+      "intent": {
+        "id": "visual-intent:style:user-avatar",
+        "type": "style",
+        "targetId": "visual-target:user-avatar",
+        "before": { "border-radius": "4px" },
+        "desired": { "border-radius": "50%" }
+      },
+      "expectedFacts": [
+        "visual-target:user-avatar",
+        "tag=img",
+        "sourceId=src/UserAvatar.ts",
+        "border-radius=50%"
+      ]
+    },
+    {
+      "id": "style-06",
+      "category": "style",
+      "target": {
+        "id": "visual-target:page-title",
+        "tag": "h1",
+        "text": "Orders",
+        "sourceId": "src/OrdersPage.ts",
+        "templateNodeId": "src/OrdersPage.ts:h1:11:3"
+      },
+      "intent": {
+        "id": "visual-intent:style:page-title",
+        "type": "style",
+        "targetId": "visual-target:page-title",
+        "before": { "font-size": "24px" },
+        "desired": { "font-size": "28px" }
+      },
+      "expectedFacts": [
+        "visual-target:page-title",
+        "text=\"Orders\"",
+        "font-size=28px"
+      ]
+    },
+    {
+      "id": "style-07",
+      "category": "style",
+      "target": {
+        "id": "visual-target:empty-state",
+        "tag": "section",
+        "text": "No results",
+        "sourceId": "src/EmptyState.ts",
+        "templateNodeId": "src/EmptyState.ts:section:4:3"
+      },
+      "intent": {
+        "id": "visual-intent:style:empty-state",
+        "type": "style",
+        "targetId": "visual-target:empty-state",
+        "before": { "display": "block" },
+        "desired": { "display": "grid" }
+      },
+      "expectedFacts": [
+        "visual-target:empty-state",
+        "sourceId=src/EmptyState.ts",
+        "display=grid"
+      ]
+    },
+    {
+      "id": "style-08",
+      "category": "style",
+      "target": {
+        "id": "visual-target:gallery",
+        "tag": "ul",
+        "text": "Product gallery",
+        "sourceId": "src/ProductGallery.ts",
+        "templateNodeId": "src/ProductGallery.ts:ul:16:3"
+      },
+      "intent": {
+        "id": "visual-intent:style:gallery",
+        "type": "style",
+        "targetId": "visual-target:gallery",
+        "before": { "grid-template-columns": "repeat(2, 1fr)" },
+        "desired": { "grid-template-columns": "repeat(3, 1fr)" }
+      },
+      "expectedFacts": [
+        "visual-target:gallery",
+        "sourceId=src/ProductGallery.ts",
+        "grid-template-columns=repeat(3, 1fr)"
+      ]
+    },
+    {
+      "id": "style-09",
+      "category": "style",
+      "target": {
+        "id": "visual-target:sidebar",
+        "tag": "aside",
+        "text": "Navigation",
+        "sourceId": "src/AppSidebar.ts",
+        "templateNodeId": "src/AppSidebar.ts:aside:6:3"
+      },
+      "intent": {
+        "id": "visual-intent:style:sidebar",
+        "type": "style",
+        "targetId": "visual-target:sidebar",
+        "before": { "width": "280px" },
+        "desired": { "width": "320px" }
+      },
+      "expectedFacts": [
+        "visual-target:sidebar",
+        "text=\"Navigation\"",
+        "width=320px"
+      ]
+    },
+    {
+      "id": "style-10",
+      "category": "style",
+      "target": {
+        "id": "visual-target:disabled-action",
+        "tag": "button",
+        "text": "Deploy",
+        "sourceId": "src/DeployAction.ts",
+        "templateNodeId": "src/DeployAction.ts:button:21:5"
+      },
+      "intent": {
+        "id": "visual-intent:style:disabled-action",
+        "type": "style",
+        "targetId": "visual-target:disabled-action",
+        "before": { "opacity": "0.4" },
+        "desired": { "opacity": "0.55" }
+      },
+      "expectedFacts": [
+        "visual-target:disabled-action",
+        "sourceId=src/DeployAction.ts",
+        "opacity=0.55"
+      ]
+    },
+    {
+      "id": "move-01",
+      "category": "move",
+      "target": {
+        "id": "visual-target:menu-item",
+        "tag": "button",
+        "text": "Settings",
+        "sourceId": "src/MenuItem.ts",
+        "templateNodeId": "src/MenuItem.ts:button:14:5",
+        "geometry": { "x": 20, "y": 30, "width": 140, "height": 36 }
+      },
+      "relatedTargets": [
+        {
+          "id": "visual-target:menu-group",
+          "tag": "div",
+          "text": "Account",
+          "sourceId": "src/MenuGroup.ts",
+          "templateNodeId": "src/MenuGroup.ts:div:8:3"
+        }
+      ],
+      "intent": {
+        "id": "visual-intent:move:menu-item",
+        "type": "move",
+        "targetId": "visual-target:menu-item",
+        "before": { "x": 20, "y": 30, "width": 140, "height": 36 },
+        "desired": { "x": 20, "y": 80, "width": 140, "height": 36 },
+        "relations": [
+          { "type": "inside", "targetId": "visual-target:menu-group" }
+        ]
+      },
+      "expectedFacts": [
+        "visual-target:menu-item",
+        "text=\"Settings\"",
+        "inside->visual-target:menu-group",
+        "desired=20,80,140x36"
+      ]
+    },
+    {
+      "id": "move-02",
+      "category": "move",
+      "target": {
+        "id": "visual-target:primary-action",
+        "tag": "button",
+        "text": "Continue",
+        "sourceId": "src/CheckoutActions.ts",
+        "templateNodeId": "src/CheckoutActions.ts:button:17:5"
+      },
+      "relatedTargets": [
+        {
+          "id": "visual-target:footer-action",
+          "tag": "button",
+          "text": "Cancel",
+          "sourceId": "src/CheckoutActions.ts",
+          "templateNodeId": "src/CheckoutActions.ts:button:18:5"
+        }
+      ],
+      "intent": {
+        "id": "visual-intent:move:primary-action",
+        "type": "move",
+        "targetId": "visual-target:primary-action",
+        "before": { "x": 220, "y": 500, "width": 120, "height": 40 },
+        "desired": { "x": 80, "y": 500, "width": 120, "height": 40 },
+        "relations": [
+          { "type": "before", "targetId": "visual-target:footer-action" }
+        ]
+      },
+      "expectedFacts": [
+        "visual-target:primary-action",
+        "before->visual-target:footer-action",
+        "sourceId=src/CheckoutActions.ts"
+      ]
+    },
+    {
+      "id": "move-03",
+      "category": "move",
+      "target": {
+        "id": "visual-target:field-hint",
+        "tag": "small",
+        "text": "Use at least 8 characters",
+        "sourceId": "src/PasswordField.ts",
+        "templateNodeId": "src/PasswordField.ts:small:22:5"
+      },
+      "relatedTargets": [
+        {
+          "id": "visual-target:password-input",
+          "tag": "input",
+          "sourceId": "src/PasswordField.ts",
+          "templateNodeId": "src/PasswordField.ts:input:18:5"
+        }
+      ],
+      "intent": {
+        "id": "visual-intent:move:field-hint",
+        "type": "move",
+        "targetId": "visual-target:field-hint",
+        "before": { "x": 40, "y": 220, "width": 220, "height": 20 },
+        "desired": { "x": 40, "y": 188, "width": 220, "height": 20 },
+        "relations": [
+          { "type": "after", "targetId": "visual-target:password-input" }
+        ]
+      },
+      "expectedFacts": [
+        "visual-target:field-hint",
+        "after->visual-target:password-input",
+        "text=\"Use at least 8 characters\""
+      ]
+    },
+    {
+      "id": "move-04",
+      "category": "move",
+      "target": {
+        "id": "visual-target:status-badge",
+        "tag": "span",
+        "text": "Active",
+        "sourceId": "src/AccountHeader.ts",
+        "templateNodeId": "src/AccountHeader.ts:span:9:7"
+      },
+      "relatedTargets": [
+        {
+          "id": "visual-target:account-title",
+          "tag": "h2",
+          "text": "Acme Inc.",
+          "sourceId": "src/AccountHeader.ts",
+          "templateNodeId": "src/AccountHeader.ts:h2:8:5"
+        }
+      ],
+      "intent": {
+        "id": "visual-intent:move:status-badge",
+        "type": "move",
+        "targetId": "visual-target:status-badge",
+        "before": { "x": 260, "y": 40, "width": 56, "height": 24 },
+        "desired": { "x": 120, "y": 40, "width": 56, "height": 24 },
+        "relations": [
+          { "type": "left-of", "targetId": "visual-target:account-title" }
+        ]
+      },
+      "expectedFacts": [
+        "visual-target:status-badge",
+        "left-of->visual-target:account-title",
+        "text=\"Active\""
+      ]
+    },
+    {
+      "id": "move-05",
+      "category": "move",
+      "target": {
+        "id": "visual-target:search-icon",
+        "tag": "svg",
+        "sourceId": "src/SearchField.ts",
+        "templateNodeId": "src/SearchField.ts:svg:12:5"
+      },
+      "relatedTargets": [
+        {
+          "id": "visual-target:search-label",
+          "tag": "span",
+          "text": "Search",
+          "sourceId": "src/SearchField.ts",
+          "templateNodeId": "src/SearchField.ts:span:13:5"
+        }
+      ],
+      "intent": {
+        "id": "visual-intent:move:search-icon",
+        "type": "move",
+        "targetId": "visual-target:search-icon",
+        "before": { "x": 20, "y": 20, "width": 20, "height": 20 },
+        "desired": { "x": 92, "y": 20, "width": 20, "height": 20 },
+        "relations": [
+          { "type": "right-of", "targetId": "visual-target:search-label" }
+        ]
+      },
+      "expectedFacts": [
+        "visual-target:search-icon",
+        "right-of->visual-target:search-label",
+        "templateNodeId=src/SearchField.ts:svg:12:5"
+      ]
+    },
+    {
+      "id": "move-06",
+      "category": "move",
+      "target": {
+        "id": "visual-target:profile-avatar",
+        "tag": "img",
+        "sourceId": "src/ProfileRow.ts",
+        "templateNodeId": "src/ProfileRow.ts:img:6:5"
+      },
+      "relatedTargets": [
+        {
+          "id": "visual-target:profile-name",
+          "tag": "strong",
+          "text": "Ava Chen",
+          "sourceId": "src/ProfileRow.ts",
+          "templateNodeId": "src/ProfileRow.ts:strong:7:5"
+        }
+      ],
+      "intent": {
+        "id": "visual-intent:move:profile-avatar",
+        "type": "move",
+        "targetId": "visual-target:profile-avatar",
+        "before": { "x": 20, "y": 16, "width": 40, "height": 40 },
+        "desired": { "x": 20, "y": 24, "width": 40, "height": 40 },
+        "relations": [
+          { "type": "align-with", "targetId": "visual-target:profile-name" }
+        ]
+      },
+      "expectedFacts": [
+        "visual-target:profile-avatar",
+        "align-with->visual-target:profile-name",
+        "sourceId=src/ProfileRow.ts"
+      ]
+    },
+    {
+      "id": "move-07",
+      "category": "move",
+      "target": {
+        "id": "visual-target:help-tooltip",
+        "tag": "div",
+        "text": "Billing cycle details",
+        "sourceId": "src/BillingTooltip.ts",
+        "templateNodeId": "src/BillingTooltip.ts:div:15:3"
+      },
+      "relatedTargets": [
+        {
+          "id": "visual-target:help-trigger",
+          "tag": "button",
+          "text": "Help",
+          "sourceId": "src/BillingTooltip.ts",
+          "templateNodeId": "src/BillingTooltip.ts:button:8:3"
+        }
+      ],
+      "intent": {
+        "id": "visual-intent:move:help-tooltip",
+        "type": "move",
+        "targetId": "visual-target:help-tooltip",
+        "before": { "x": 400, "y": 120, "width": 240, "height": 96 },
+        "desired": { "x": 320, "y": 72, "width": 240, "height": 96 },
+        "relations": [
+          { "type": "near", "targetId": "visual-target:help-trigger" }
+        ]
+      },
+      "expectedFacts": [
+        "visual-target:help-tooltip",
+        "near->visual-target:help-trigger",
+        "text=\"Billing cycle details\""
+      ]
+    },
+    {
+      "id": "move-08",
+      "category": "move",
+      "target": {
+        "id": "visual-target:metric-card",
+        "tag": "article",
+        "text": "Revenue",
+        "sourceId": "src/MetricCard.ts",
+        "templateNodeId": "src/MetricCard.ts:article:4:3"
+      },
+      "relatedTargets": [
+        {
+          "id": "visual-target:dashboard-column",
+          "tag": "section",
+          "text": "Performance",
+          "sourceId": "src/DashboardGrid.ts",
+          "templateNodeId": "src/DashboardGrid.ts:section:22:3"
+        }
+      ],
+      "intent": {
+        "id": "visual-intent:move:metric-card",
+        "type": "move",
+        "targetId": "visual-target:metric-card",
+        "before": { "x": 40, "y": 160, "width": 260, "height": 140 },
+        "desired": { "x": 340, "y": 160, "width": 260, "height": 140 },
+        "relations": [
+          { "type": "inside", "targetId": "visual-target:dashboard-column" }
+        ]
+      },
+      "expectedFacts": [
+        "visual-target:metric-card",
+        "inside->visual-target:dashboard-column",
+        "sourceId=src/MetricCard.ts"
+      ]
+    },
+    {
+      "id": "move-09",
+      "category": "move",
+      "target": {
+        "id": "visual-target:search-bar",
+        "tag": "form",
+        "text": "Search orders",
+        "sourceId": "src/OrdersToolbar.ts",
+        "templateNodeId": "src/OrdersToolbar.ts:form:8:3"
+      },
+      "relatedTargets": [
+        {
+          "id": "visual-target:filter-list",
+          "tag": "div",
+          "text": "Filters",
+          "sourceId": "src/OrdersToolbar.ts",
+          "templateNodeId": "src/OrdersToolbar.ts:div:16:3"
+        }
+      ],
+      "intent": {
+        "id": "visual-intent:move:search-bar",
+        "type": "move",
+        "targetId": "visual-target:search-bar",
+        "before": { "x": 260, "y": 80, "width": 320, "height": 40 },
+        "desired": { "x": 24, "y": 80, "width": 320, "height": 40 },
+        "relations": [
+          { "type": "before", "targetId": "visual-target:filter-list" }
+        ]
+      },
+      "expectedFacts": [
+        "visual-target:search-bar",
+        "before->visual-target:filter-list",
+        "text=\"Search orders\""
+      ]
+    },
+    {
+      "id": "move-10",
+      "category": "move",
+      "target": {
+        "id": "visual-target:pagination",
+        "tag": "nav",
+        "text": "Pagination",
+        "sourceId": "src/OrdersPagination.ts",
+        "templateNodeId": "src/OrdersPagination.ts:nav:5:3"
+      },
+      "relatedTargets": [
+        {
+          "id": "visual-target:orders-table",
+          "tag": "table",
+          "text": "Orders",
+          "sourceId": "src/OrdersTable.ts",
+          "templateNodeId": "src/OrdersTable.ts:table:10:3"
+        }
+      ],
+      "intent": {
+        "id": "visual-intent:move:pagination",
+        "type": "move",
+        "targetId": "visual-target:pagination",
+        "before": { "x": 24, "y": 120, "width": 560, "height": 44 },
+        "desired": { "x": 24, "y": 620, "width": 560, "height": 44 },
+        "relations": [
+          { "type": "after", "targetId": "visual-target:orders-table" }
+        ]
+      },
+      "expectedFacts": [
+        "visual-target:pagination",
+        "after->visual-target:orders-table",
+        "sourceId=src/OrdersPagination.ts"
+      ]
+    },
+    {
+      "id": "resize-01",
+      "category": "resize",
+      "target": {
+        "id": "visual-target:chart",
+        "tag": "div",
+        "text": "Monthly revenue",
+        "sourceId": "src/RevenueChart.ts",
+        "templateNodeId": "src/RevenueChart.ts:div:10:3"
+      },
+      "intent": {
+        "id": "visual-intent:resize:chart",
+        "type": "resize",
+        "targetId": "visual-target:chart",
+        "before": { "x": 20, "y": 80, "width": 480, "height": 260 },
+        "desired": { "x": 20, "y": 80, "width": 640, "height": 320 }
+      },
+      "expectedFacts": [
+        "visual-target:chart",
+        "desired=20,80,640x320",
+        "sourceId=src/RevenueChart.ts"
+      ]
+    },
+    {
+      "id": "resize-02",
+      "category": "resize",
+      "target": {
+        "id": "visual-target:search-input",
+        "tag": "input",
+        "sourceId": "src/GlobalSearch.ts",
+        "templateNodeId": "src/GlobalSearch.ts:input:9:5"
+      },
+      "intent": {
+        "id": "visual-intent:resize:search-input",
+        "type": "resize",
+        "targetId": "visual-target:search-input",
+        "before": { "x": 24, "y": 20, "width": 240, "height": 36 },
+        "desired": { "x": 24, "y": 20, "width": 360, "height": 36 }
+      },
+      "expectedFacts": [
+        "visual-target:search-input",
+        "desired=24,20,360x36",
+        "templateNodeId=src/GlobalSearch.ts:input:9:5"
+      ]
+    },
+    {
+      "id": "resize-03",
+      "category": "resize",
+      "target": {
+        "id": "visual-target:dialog",
+        "tag": "section",
+        "text": "Invite members",
+        "sourceId": "src/InviteDialog.ts",
+        "templateNodeId": "src/InviteDialog.ts:section:6:3"
+      },
+      "intent": {
+        "id": "visual-intent:resize:dialog",
+        "type": "resize",
+        "targetId": "visual-target:dialog",
+        "before": { "x": 240, "y": 120, "width": 480, "height": 360 },
+        "desired": { "x": 200, "y": 100, "width": 560, "height": 420 }
+      },
+      "expectedFacts": [
+        "visual-target:dialog",
+        "text=\"Invite members\"",
+        "desired=200,100,560x420"
+      ]
+    },
+    {
+      "id": "resize-04",
+      "category": "resize",
+      "target": {
+        "id": "visual-target:notes",
+        "tag": "textarea",
+        "sourceId": "src/OrderNotes.ts",
+        "templateNodeId": "src/OrderNotes.ts:textarea:13:5"
+      },
+      "intent": {
+        "id": "visual-intent:resize:notes",
+        "type": "resize",
+        "targetId": "visual-target:notes",
+        "before": { "x": 32, "y": 220, "width": 400, "height": 96 },
+        "desired": { "x": 32, "y": 220, "width": 400, "height": 160 }
+      },
+      "expectedFacts": [
+        "visual-target:notes",
+        "desired=32,220,400x160",
+        "sourceId=src/OrderNotes.ts"
+      ]
+    },
+    {
+      "id": "resize-05",
+      "category": "resize",
+      "target": {
+        "id": "visual-target:thumbnail",
+        "tag": "img",
+        "sourceId": "src/ProductThumbnail.ts",
+        "templateNodeId": "src/ProductThumbnail.ts:img:4:3"
+      },
+      "intent": {
+        "id": "visual-intent:resize:thumbnail",
+        "type": "resize",
+        "targetId": "visual-target:thumbnail",
+        "before": { "x": 12, "y": 12, "width": 64, "height": 64 },
+        "desired": { "x": 12, "y": 12, "width": 80, "height": 80 }
+      },
+      "expectedFacts": [
+        "visual-target:thumbnail",
+        "desired=12,12,80x80",
+        "tag=img"
+      ]
+    },
+    {
+      "id": "resize-06",
+      "category": "resize",
+      "target": {
+        "id": "visual-target:code-editor",
+        "tag": "div",
+        "text": "Query editor",
+        "sourceId": "src/QueryEditor.ts",
+        "templateNodeId": "src/QueryEditor.ts:div:19:3"
+      },
+      "intent": {
+        "id": "visual-intent:resize:code-editor",
+        "type": "resize",
+        "targetId": "visual-target:code-editor",
+        "before": { "x": 20, "y": 140, "width": 720, "height": 300 },
+        "desired": { "x": 20, "y": 140, "width": 720, "height": 420 }
+      },
+      "expectedFacts": [
+        "visual-target:code-editor",
+        "text=\"Query editor\"",
+        "desired=20,140,720x420"
+      ]
+    },
+    {
+      "id": "resize-07",
+      "category": "resize",
+      "target": {
+        "id": "visual-target:filter-drawer",
+        "tag": "aside",
+        "text": "Filters",
+        "sourceId": "src/FilterDrawer.ts",
+        "templateNodeId": "src/FilterDrawer.ts:aside:7:3"
+      },
+      "intent": {
+        "id": "visual-intent:resize:filter-drawer",
+        "type": "resize",
+        "targetId": "visual-target:filter-drawer",
+        "before": { "x": 960, "y": 0, "width": 320, "height": 720 },
+        "desired": { "x": 880, "y": 0, "width": 400, "height": 720 }
+      },
+      "expectedFacts": [
+        "visual-target:filter-drawer",
+        "desired=880,0,400x720",
+        "sourceId=src/FilterDrawer.ts"
+      ]
+    },
+    {
+      "id": "resize-08",
+      "category": "resize",
+      "target": {
+        "id": "visual-target:progress",
+        "tag": "div",
+        "text": "Upload progress",
+        "sourceId": "src/UploadProgress.ts",
+        "templateNodeId": "src/UploadProgress.ts:div:12:5"
+      },
+      "intent": {
+        "id": "visual-intent:resize:progress",
+        "type": "resize",
+        "targetId": "visual-target:progress",
+        "before": { "x": 40, "y": 300, "width": 240, "height": 8 },
+        "desired": { "x": 40, "y": 300, "width": 360, "height": 8 }
+      },
+      "expectedFacts": [
+        "visual-target:progress",
+        "desired=40,300,360x8",
+        "templateNodeId=src/UploadProgress.ts:div:12:5"
+      ]
+    },
+    {
+      "id": "structure-01",
+      "category": "structure",
+      "target": {
+        "id": "visual-target:legacy-banner",
+        "tag": "aside",
+        "text": "Legacy billing is enabled",
+        "sourceId": "src/LegacyBanner.ts",
+        "templateNodeId": "src/LegacyBanner.ts:aside:3:3"
+      },
+      "intent": {
+        "id": "visual-intent:remove:legacy-banner",
+        "type": "remove",
+        "targetId": "visual-target:legacy-banner"
+      },
+      "expectedFacts": [
+        "visual-target:legacy-banner",
+        "type=remove",
+        "sourceId=src/LegacyBanner.ts"
+      ]
+    },
+    {
+      "id": "structure-02",
+      "category": "structure",
+      "target": {
+        "id": "visual-target:secondary-chart",
+        "tag": "article",
+        "text": "Conversion rate",
+        "sourceId": "src/ConversionCard.ts",
+        "templateNodeId": "src/ConversionCard.ts:article:5:3"
+      },
+      "intent": {
+        "id": "visual-intent:duplicate:secondary-chart",
+        "type": "duplicate",
+        "targetId": "visual-target:secondary-chart"
+      },
+      "expectedFacts": [
+        "visual-target:secondary-chart",
+        "type=duplicate",
+        "text=\"Conversion rate\""
+      ]
+    },
+    {
+      "id": "structure-03",
+      "category": "structure",
+      "target": {
+        "id": "visual-target:obsolete-filter",
+        "tag": "button",
+        "text": "Archived only",
+        "sourceId": "src/OrderFilters.ts",
+        "templateNodeId": "src/OrderFilters.ts:button:27:5"
+      },
+      "intent": {
+        "id": "visual-intent:remove:obsolete-filter",
+        "type": "remove",
+        "targetId": "visual-target:obsolete-filter"
+      },
+      "expectedFacts": [
+        "visual-target:obsolete-filter",
+        "type=remove",
+        "templateNodeId=src/OrderFilters.ts:button:27:5"
+      ]
+    },
+    {
+      "id": "structure-04",
+      "category": "structure",
+      "target": {
+        "id": "visual-target:address-row",
+        "tag": "div",
+        "text": "Shipping address",
+        "sourceId": "src/AddressRow.ts",
+        "templateNodeId": "src/AddressRow.ts:div:10:3"
+      },
+      "intent": {
+        "id": "visual-intent:duplicate:address-row",
+        "type": "duplicate",
+        "targetId": "visual-target:address-row"
+      },
+      "expectedFacts": [
+        "visual-target:address-row",
+        "type=duplicate",
+        "sourceId=src/AddressRow.ts"
+      ]
+    },
+    {
+      "id": "motion-01",
+      "category": "motion",
+      "target": {
+        "id": "visual-target:menu-trigger",
+        "tag": "button",
+        "text": "Products",
+        "sourceId": "src/NavMenu.ts",
+        "templateNodeId": "src/NavMenu.ts:button:8:5"
+      },
+      "intent": {
+        "id": "visual-intent:motion:menu-trigger",
+        "type": "motion",
+        "targetId": "visual-target:menu-trigger",
+        "desired": {
+          "kind": "transition",
+          "trigger": "hover",
+          "properties": ["opacity", "transform"],
+          "durationMs": 240,
+          "delayMs": 0,
+          "easing": "ease-out",
+          "respectReducedMotion": true
+        }
+      },
+      "expectedFacts": [
+        "visual-target:menu-trigger",
+        "properties=opacity,transform",
+        "trigger=hover",
+        "durationMs=240",
+        "respectReducedMotion=true"
+      ]
+    },
+    {
+      "id": "motion-02",
+      "category": "motion",
+      "target": {
+        "id": "visual-target:command-menu",
+        "tag": "section",
+        "text": "Command menu",
+        "sourceId": "src/CommandMenu.ts",
+        "templateNodeId": "src/CommandMenu.ts:section:11:3"
+      },
+      "intent": {
+        "id": "visual-intent:motion:command-menu",
+        "type": "motion",
+        "targetId": "visual-target:command-menu",
+        "desired": {
+          "kind": "transition",
+          "trigger": "enter",
+          "properties": ["opacity", "transform"],
+          "durationMs": 180,
+          "delayMs": 20,
+          "easing": "cubic-bezier(0.2, 0, 0, 1)",
+          "respectReducedMotion": true
+        }
+      },
+      "expectedFacts": [
+        "visual-target:command-menu",
+        "trigger=enter",
+        "delayMs=20",
+        "easing=cubic-bezier(0.2, 0, 0, 1)",
+        "sourceId=src/CommandMenu.ts"
+      ]
+    },
+    {
+      "id": "motion-03",
+      "category": "motion",
+      "target": {
+        "id": "visual-target:toast",
+        "tag": "aside",
+        "text": "Changes saved",
+        "sourceId": "src/Toast.ts",
+        "templateNodeId": "src/Toast.ts:aside:6:3"
+      },
+      "intent": {
+        "id": "visual-intent:motion:toast",
+        "type": "motion",
+        "targetId": "visual-target:toast",
+        "desired": {
+          "kind": "transition",
+          "trigger": "exit",
+          "properties": ["opacity"],
+          "durationMs": 160,
+          "delayMs": 0,
+          "easing": "ease-in",
+          "respectReducedMotion": true
+        }
+      },
+      "expectedFacts": [
+        "visual-target:toast",
+        "trigger=exit",
+        "properties=opacity",
+        "durationMs=160",
+        "text=\"Changes saved\""
+      ]
+    },
+    {
+      "id": "motion-04",
+      "category": "motion",
+      "target": {
+        "id": "visual-target:email-input",
+        "tag": "input",
+        "sourceId": "src/EmailField.ts",
+        "templateNodeId": "src/EmailField.ts:input:9:5"
+      },
+      "intent": {
+        "id": "visual-intent:motion:email-input",
+        "type": "motion",
+        "targetId": "visual-target:email-input",
+        "desired": {
+          "kind": "transition",
+          "trigger": "focus",
+          "properties": ["box-shadow", "transform"],
+          "durationMs": 140,
+          "delayMs": 0,
+          "easing": "ease-out",
+          "respectReducedMotion": true
+        }
+      },
+      "expectedFacts": [
+        "visual-target:email-input",
+        "trigger=focus",
+        "properties=box-shadow,transform",
+        "templateNodeId=src/EmailField.ts:input:9:5"
+      ]
+    },
+    {
+      "id": "motion-05",
+      "category": "motion",
+      "target": {
+        "id": "visual-target:like-button",
+        "tag": "button",
+        "text": "Like",
+        "sourceId": "src/LikeButton.ts",
+        "templateNodeId": "src/LikeButton.ts:button:5:3"
+      },
+      "intent": {
+        "id": "visual-intent:motion:like-button",
+        "type": "motion",
+        "targetId": "visual-target:like-button",
+        "desired": {
+          "kind": "transition",
+          "trigger": "press",
+          "properties": ["transform"],
+          "durationMs": 90,
+          "delayMs": 0,
+          "easing": "ease-out",
+          "respectReducedMotion": false
+        }
+      },
+      "expectedFacts": [
+        "visual-target:like-button",
+        "trigger=press",
+        "durationMs=90",
+        "respectReducedMotion=false"
+      ]
+    },
+    {
+      "id": "motion-06",
+      "category": "motion",
+      "target": {
+        "id": "visual-target:accordion-panel",
+        "tag": "section",
+        "text": "Advanced settings",
+        "sourceId": "src/AccordionPanel.ts",
+        "templateNodeId": "src/AccordionPanel.ts:section:14:3"
+      },
+      "intent": {
+        "id": "visual-intent:motion:accordion-panel",
+        "type": "motion",
+        "targetId": "visual-target:accordion-panel",
+        "desired": {
+          "kind": "transition",
+          "trigger": "state-change",
+          "properties": ["height", "opacity"],
+          "durationMs": 260,
+          "delayMs": 30,
+          "easing": "ease-in-out",
+          "respectReducedMotion": true
+        }
+      },
+      "expectedFacts": [
+        "visual-target:accordion-panel",
+        "trigger=state-change",
+        "properties=height,opacity",
+        "delayMs=30"
+      ]
+    },
+    {
+      "id": "motion-07",
+      "category": "motion",
+      "target": {
+        "id": "visual-target:table-row",
+        "tag": "tr",
+        "text": "Order 1024",
+        "sourceId": "src/OrdersTable.ts",
+        "templateNodeId": "src/OrdersTable.ts:tr:24:5"
+      },
+      "intent": {
+        "id": "visual-intent:motion:table-row",
+        "type": "motion",
+        "targetId": "visual-target:table-row",
+        "desired": {
+          "kind": "transition",
+          "trigger": "hover",
+          "properties": ["color", "background-color"],
+          "durationMs": 120,
+          "delayMs": 0,
+          "easing": "linear",
+          "respectReducedMotion": true
+        }
+      },
+      "expectedFacts": [
+        "visual-target:table-row",
+        "properties=color,background-color",
+        "easing=linear",
+        "text=\"Order 1024\""
+      ]
+    },
+    {
+      "id": "motion-08",
+      "category": "motion",
+      "target": {
+        "id": "visual-target:image-preview",
+        "tag": "figure",
+        "text": "Image preview",
+        "sourceId": "src/ImagePreview.ts",
+        "templateNodeId": "src/ImagePreview.ts:figure:7:3"
+      },
+      "intent": {
+        "id": "visual-intent:motion:image-preview",
+        "type": "motion",
+        "targetId": "visual-target:image-preview",
+        "desired": {
+          "kind": "transition",
+          "trigger": "enter",
+          "properties": ["clip-path", "opacity"],
+          "durationMs": 300,
+          "delayMs": 50,
+          "easing": "cubic-bezier(0.2, 0, 0, 1)",
+          "respectReducedMotion": false
+        }
+      },
+      "expectedFacts": [
+        "visual-target:image-preview",
+        "properties=clip-path,opacity",
+        "durationMs=300",
+        "delayMs=50",
+        "respectReducedMotion=false"
+      ]
+    },
+    {
+      "id": "motion-09",
+      "category": "motion",
+      "target": {
+        "id": "visual-target:side-panel",
+        "tag": "aside",
+        "text": "Activity",
+        "sourceId": "src/ActivityPanel.ts",
+        "templateNodeId": "src/ActivityPanel.ts:aside:4:3"
+      },
+      "intent": {
+        "id": "visual-intent:motion:side-panel",
+        "type": "motion",
+        "targetId": "visual-target:side-panel",
+        "desired": {
+          "kind": "transition",
+          "trigger": "exit",
+          "properties": ["transform", "opacity"],
+          "durationMs": 220,
+          "delayMs": 10,
+          "easing": "ease-in",
+          "respectReducedMotion": true
+        }
+      },
+      "expectedFacts": [
+        "visual-target:side-panel",
+        "trigger=exit",
+        "properties=transform,opacity",
+        "delayMs=10",
+        "sourceId=src/ActivityPanel.ts"
+      ]
+    },
+    {
+      "id": "motion-10",
+      "category": "motion",
+      "target": {
+        "id": "visual-target:details-grid",
+        "tag": "div",
+        "text": "Details",
+        "sourceId": "src/DetailsGrid.ts",
+        "templateNodeId": "src/DetailsGrid.ts:div:12:3"
+      },
+      "intent": {
+        "id": "visual-intent:motion:details-grid",
+        "type": "motion",
+        "targetId": "visual-target:details-grid",
+        "desired": {
+          "kind": "transition",
+          "trigger": "state-change",
+          "properties": ["grid-template-rows"],
+          "durationMs": 360,
+          "delayMs": 0,
+          "easing": "ease-in-out",
+          "respectReducedMotion": true
+        }
+      },
+      "expectedFacts": [
+        "visual-target:details-grid",
+        "properties=grid-template-rows",
+        "durationMs=360",
+        "easing=ease-in-out"
+      ]
+    },
+    {
+      "id": "annotation-01",
+      "category": "annotation",
+      "target": {
+        "id": "visual-target:price",
+        "tag": "strong",
+        "text": "$49.00",
+        "sourceId": "src/PriceSummary.ts",
+        "templateNodeId": "src/PriceSummary.ts:strong:15:5"
+      },
+      "annotation": {
+        "id": "annotation:price-note",
+        "type": "comment",
+        "targetIds": ["visual-target:price"],
+        "text": "Emphasize the discounted price",
+        "createdAt": 100
+      },
+      "expectedFacts": [
+        "visual-target:price",
+        "annotation annotation:price-note",
+        "text=\"Emphasize the discounted price\"",
+        "sourceId=src/PriceSummary.ts"
+      ]
+    },
+    {
+      "id": "annotation-02",
+      "category": "annotation",
+      "target": {
+        "id": "visual-target:hero-copy",
+        "tag": "div",
+        "text": "Launch faster",
+        "sourceId": "src/HeroCopy.ts",
+        "templateNodeId": "src/HeroCopy.ts:div:5:3"
+      },
+      "annotation": {
+        "id": "annotation:hero-frame",
+        "type": "rectangle",
+        "targetIds": ["visual-target:hero-copy"],
+        "geometry": { "x": 40, "y": 60, "width": 420, "height": 180 },
+        "createdAt": 110
+      },
+      "expectedFacts": [
+        "visual-target:hero-copy",
+        "type=rectangle",
+        "geometry=40,60,420x180",
+        "templateNodeId=src/HeroCopy.ts:div:5:3"
+      ]
+    },
+    {
+      "id": "annotation-03",
+      "category": "annotation",
+      "target": {
+        "id": "visual-target:upload-action",
+        "tag": "button",
+        "text": "Upload file",
+        "sourceId": "src/UploadAction.ts",
+        "templateNodeId": "src/UploadAction.ts:button:9:5"
+      },
+      "annotation": {
+        "id": "annotation:upload-arrow",
+        "type": "arrow",
+        "targetIds": ["visual-target:upload-action"],
+        "from": { "x": 20, "y": 240 },
+        "to": { "x": 160, "y": 120 },
+        "createdAt": 120
+      },
+      "expectedFacts": [
+        "visual-target:upload-action",
+        "type=arrow",
+        "from=20,240",
+        "to=160,120"
+      ]
+    },
+    {
+      "id": "annotation-04",
+      "category": "annotation",
+      "target": {
+        "id": "visual-target:error-message",
+        "tag": "p",
+        "text": "Card was declined",
+        "sourceId": "src/PaymentError.ts",
+        "templateNodeId": "src/PaymentError.ts:p:7:3"
+      },
+      "annotation": {
+        "id": "annotation:error-highlight",
+        "type": "highlight",
+        "targetIds": ["visual-target:error-message"],
+        "geometry": { "x": 32, "y": 280, "width": 300, "height": 32 },
+        "createdAt": 130
+      },
+      "expectedFacts": [
+        "visual-target:error-message",
+        "type=highlight",
+        "geometry=32,280,300x32",
+        "text=\"Card was declined\""
+      ]
+    },
+    {
+      "id": "annotation-05",
+      "category": "annotation",
+      "target": {
+        "id": "visual-target:account-number",
+        "tag": "span",
+        "text": "**** 4217",
+        "sourceId": "src/BankAccount.ts",
+        "templateNodeId": "src/BankAccount.ts:span:18:5"
+      },
+      "annotation": {
+        "id": "annotation:account-redaction",
+        "type": "redaction",
+        "targetIds": ["visual-target:account-number"],
+        "geometry": { "x": 220, "y": 140, "width": 120, "height": 24 },
+        "createdAt": 140
+      },
+      "expectedFacts": [
+        "visual-target:account-number",
+        "type=redaction",
+        "geometry=220,140,120x24",
+        "sourceId=src/BankAccount.ts"
+      ]
+    },
+    {
+      "id": "annotation-06",
+      "category": "annotation",
+      "target": {
+        "id": "visual-target:checkout-total",
+        "tag": "strong",
+        "text": "Total $128.00",
+        "sourceId": "src/CheckoutTotal.ts",
+        "templateNodeId": "src/CheckoutTotal.ts:strong:23:5"
+      },
+      "annotation": {
+        "id": "annotation:total-source",
+        "type": "comment",
+        "targetIds": ["visual-target:checkout-total"],
+        "text": "Keep this aligned with the tax calculation",
+        "createdAt": 150
+      },
+      "expectedFacts": [
+        "visual-target:checkout-total",
+        "sourceId=src/CheckoutTotal.ts",
+        "templateNodeId=src/CheckoutTotal.ts:strong:23:5",
+        "text=\"Keep this aligned with the tax calculation\""
+      ]
+    },
+    {
+      "id": "annotation-07",
+      "category": "annotation",
+      "target": {
+        "id": "visual-target:mobile-nav",
+        "tag": "nav",
+        "text": "Mobile navigation",
+        "sourceId": "src/MobileNav.ts",
+        "templateNodeId": "src/MobileNav.ts:nav:4:3"
+      },
+      "annotation": {
+        "id": "annotation:mobile-nav-area",
+        "type": "highlight",
+        "targetIds": ["visual-target:mobile-nav"],
+        "geometry": { "x": 0, "y": 760, "width": 390, "height": 84 },
+        "createdAt": 160
+      },
+      "expectedFacts": [
+        "visual-target:mobile-nav",
+        "geometry=0,760,390x84",
+        "sourceId=src/MobileNav.ts",
+        "text=\"Mobile navigation\""
+      ]
+    },
+    {
+      "id": "annotation-08",
+      "category": "annotation",
+      "target": {
+        "id": "visual-target:keyboard-shortcut",
+        "tag": "kbd",
+        "text": "Ctrl K",
+        "sourceId": "src/CommandHint.ts",
+        "templateNodeId": "src/CommandHint.ts:kbd:11:5"
+      },
+      "annotation": {
+        "id": "annotation:shortcut-note",
+        "type": "comment",
+        "targetIds": ["visual-target:keyboard-shortcut"],
+        "text": "Use the platform-specific modifier",
+        "createdAt": 170
+      },
+      "expectedFacts": [
+        "visual-target:keyboard-shortcut",
+        "tag=kbd",
+        "text=\"Use the platform-specific modifier\"",
+        "templateNodeId=src/CommandHint.ts:kbd:11:5"
+      ]
+    }
+  ]
+}

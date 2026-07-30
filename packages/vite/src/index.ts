@@ -1,24 +1,96 @@
 import { existsSync, statSync } from "node:fs";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  DEVTOOLS_AI_EXECUTION_CANCEL_ENDPOINT,
+  DEVTOOLS_AI_EXECUTION_ENDPOINT,
+  DEVTOOLS_AI_PROVIDER_CATALOG_ENDPOINT,
+  DEVTOOLS_AI_SCREENSHOT_UPLOAD_ENDPOINT,
+  AIProviderRegistry,
+  DeterministicMockProvider,
+  type AIProvider,
+} from "@elfui/devtools-ai";
 import {
   DEVTOOLS_COMPILER_STATE_ENDPOINT,
   DEVTOOLS_COMPILER_UPDATE_EVENT,
   DEVTOOLS_OPEN_IN_EDITOR_ENDPOINT,
   DEVTOOLS_PROTOCOL_VERSION,
+  DEVTOOLS_SOURCE_READ_ENDPOINT,
   type CompilerArtifact,
   type CompilerArtifactKind,
   type CompilerStateSnapshot,
+  type SourceReadRequest,
 } from "@elfui/devtools-shared";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import launchEditor from "launch-editor";
 import type { Plugin } from "vite";
 
+import {
+  createProjectSourceReader,
+  ProjectSourceReadError,
+} from "./project-source-reader.js";
+import {
+  createAIGatewayMiddleware,
+  type AIGatewayPatchVerificationOptions,
+} from "./ai-gateway.js";
+
+export {
+  createReadonlyAIAgentTools,
+  type AIAgentToolScope,
+  type ReadonlyAIAgentTools,
+} from "./agent-tools.js";
+export {
+  runAIAgentSession,
+  type AIAgentSessionEvent,
+  type AIAgentSessionOptions,
+} from "./agent-session.js";
 export {
   DEVTOOLS_COMPILER_STATE_ENDPOINT,
   DEVTOOLS_COMPILER_UPDATE_EVENT,
+  DEVTOOLS_AI_EXECUTION_CANCEL_ENDPOINT,
+  DEVTOOLS_AI_EXECUTION_ENDPOINT,
+  DEVTOOLS_AI_PROVIDER_CATALOG_ENDPOINT,
+  DEVTOOLS_AI_SCREENSHOT_UPLOAD_ENDPOINT,
   DEVTOOLS_OPEN_IN_EDITOR_ENDPOINT,
+  DEVTOOLS_SOURCE_READ_ENDPOINT,
 };
+export {
+  assembleReadonlyProviderRequest,
+  createAIGatewayMiddleware,
+  type AIGatewayPatchVerificationOptions,
+} from "./ai-gateway.js";
+export {
+  applyUnifiedDiffToSources,
+  createApprovedPatchApplier,
+  ApprovedPatchApplicationError,
+  type ApprovedPatchApplicationErrorCode,
+  type ApprovedPatchApplicationRequest,
+  type ApprovedPatchApplicationResult,
+  type ApprovedPatchApplier,
+  type ApprovedPatchApplierOptions,
+  type ApprovedPatchRollbackResult,
+} from "./patch-application.js";
+export {
+  createPatchProposalStore,
+  PatchProposalError,
+  unifiedDiffAffectedFiles,
+  type PatchProposalStore,
+} from "./patch-proposals.js";
+export {
+  createPatchVerificationCoordinator,
+  PATCH_VERIFICATION_STEPS,
+  type PatchVerificationAdapter,
+  type PatchVerificationAdapterResult,
+  type PatchVerificationAdapters,
+  type PatchVerificationCheckResult,
+  type PatchVerificationContext,
+  type PatchVerificationCoordinator,
+  type PatchVerificationCoordinatorOptions,
+  type PatchVerificationDiagnostic,
+  type PatchVerificationResult,
+  type PatchVerificationStep,
+} from "./patch-verification.js";
 
 const virtualClientId = "virtual:elfui-devtools-client";
 const resolvedVirtualClientId = `\0${virtualClientId}`;
@@ -31,11 +103,16 @@ const clientAutoEntry = fileURLToPath(
 const clientApiEntry = fileURLToPath(
   import.meta.resolve("@elfui/devtools-client"),
 );
+const MAX_SOURCE_REQUEST_BYTES = 16_384;
 
 export interface ElfUIDevtoolsViteOptions {
   enabled?: boolean;
   editor?: string;
   openInEditor?: (file: string, line: number, column: number) => void;
+  readonlyAIProvider?: AIProvider;
+  readonlyAIProviders?: readonly AIProvider[];
+  readonlyAIDefaultProviderId?: string;
+  patchVerification?: AIGatewayPatchVerificationOptions;
 }
 
 export interface ElfUIDevtoolsCompilerHooks {
@@ -70,6 +147,16 @@ const send = (
 ): void => {
   response.statusCode = statusCode;
   response.end(body);
+};
+
+const sendJson = (
+  response: ServerResponse,
+  statusCode: number,
+  body: unknown,
+): void => {
+  response.setHeader("content-type", "application/json; charset=utf-8");
+  response.setHeader("cache-control", "no-store");
+  send(response, statusCode, JSON.stringify(body));
 };
 
 const cloneForTransport = (value: unknown): unknown => {
@@ -159,6 +246,88 @@ const positiveInteger = (value: string | null): number => {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1;
 };
 
+const hasAccessToken = (
+  request: IncomingMessage,
+  accessToken: string,
+): boolean => {
+  const provided = request.headers["x-elfui-devtools-token"];
+  if (typeof provided !== "string") return false;
+  const expectedBytes = Buffer.from(accessToken);
+  const providedBytes = Buffer.from(provided);
+  return (
+    expectedBytes.length === providedBytes.length &&
+    timingSafeEqual(expectedBytes, providedBytes)
+  );
+};
+
+const readJsonBody = (request: IncomingMessage): Promise<SourceReadRequest> =>
+  new Promise((resolveBody, rejectBody) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk: string) => {
+      body += chunk;
+      if (body.length > MAX_SOURCE_REQUEST_BYTES)
+        rejectBody(new Error("Source read request is too large"));
+    });
+    request.on("end", () => {
+      try {
+        resolveBody(JSON.parse(body) as SourceReadRequest);
+      } catch {
+        rejectBody(new Error("Source read request is not valid JSON"));
+      }
+    });
+    request.on("error", rejectBody);
+  });
+
+export const createSourceReadMiddleware = (
+  root: string,
+  getSnapshot: () => CompilerStateSnapshot,
+  accessToken: string,
+): DevtoolsMiddleware => {
+  const readSource = createProjectSourceReader(root, getSnapshot);
+  return (request, response, next) => {
+    const url = new URL(request.url ?? "/", "http://elfui.local");
+    if (url.pathname !== DEVTOOLS_SOURCE_READ_ENDPOINT) {
+      next();
+      return;
+    }
+    if (request.method !== "POST") {
+      send(response, 405, "Source reads require POST");
+      return;
+    }
+    if (!hasAccessToken(request, accessToken)) {
+      send(response, 403, "Invalid DevTools source capability");
+      return;
+    }
+    void readJsonBody(request)
+      .then((input) => {
+        try {
+          sendJson(response, 200, readSource(input));
+        } catch (error) {
+          send(
+            response,
+            error instanceof ProjectSourceReadError ? error.statusCode : 500,
+            error instanceof Error
+              ? error.message
+              : "Failed to read source context",
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        send(
+          response,
+          error instanceof Error &&
+            error.message === "Source read request is too large"
+            ? 413
+            : 400,
+          error instanceof Error
+            ? error.message
+            : "Invalid source read request",
+        );
+      });
+  };
+};
+
 export const createOpenInEditorMiddleware = (
   root: string,
   options: ElfUIDevtoolsViteOptions = {},
@@ -231,9 +400,22 @@ export const createCompilerStateMiddleware = (
   };
 };
 
-export const createDevtoolsVirtualClient = (): string => `
-import ${JSON.stringify(virtualClientAutoId)};
-import { ingestCompilerArtifact, ingestCompilerSnapshot } from ${JSON.stringify(virtualClientApiId)};
+export const createDevtoolsVirtualClient = (
+  sourceAccessToken = "",
+  aiAccessToken = "",
+): string => `
+import {
+  createAIExecutionClient,
+  createSourceContextReader,
+  ingestCompilerArtifact,
+  ingestCompilerSnapshot,
+  installElfUIDevtools
+} from ${JSON.stringify(virtualClientApiId)};
+
+installElfUIDevtools({
+  aiExecutor: createAIExecutionClient(${JSON.stringify(aiAccessToken)}),
+  sourceReader: createSourceContextReader(${JSON.stringify(sourceAccessToken)})
+});
 
 const syncElfUICompilerState = async () => {
   try {
@@ -268,6 +450,15 @@ export const elfuiDevtools = (
   options: ElfUIDevtoolsViteOptions = {},
 ): ElfUIDevtoolsVitePlugin => {
   const compilerStore = createCompilerArtifactStore();
+  const sourceAccessToken = randomBytes(24).toString("base64url");
+  const aiAccessToken = randomBytes(24).toString("base64url");
+  const readonlyAIProviders = options.readonlyAIProviders ?? [
+    options.readonlyAIProvider ?? new DeterministicMockProvider(),
+  ];
+  const readonlyAIProviderRegistry = new AIProviderRegistry(
+    readonlyAIProviders,
+    options.readonlyAIDefaultProviderId,
+  );
   let stopBroadcast: (() => void) | null = null;
   const plugin: Plugin = {
     name: "elfui-devtools",
@@ -279,6 +470,23 @@ export const elfuiDevtools = (
       );
       server.middlewares.use(
         createCompilerStateMiddleware(() => compilerStore.snapshot()),
+      );
+      server.middlewares.use(
+        createSourceReadMiddleware(
+          server.config.root,
+          () => compilerStore.snapshot(),
+          sourceAccessToken,
+        ),
+      );
+      server.middlewares.use(
+        createAIGatewayMiddleware(
+          server.config.root,
+          () => compilerStore.snapshot(),
+          aiAccessToken,
+          readonlyAIProviderRegistry,
+          Date.now,
+          options.patchVerification,
+        ),
       );
       stopBroadcast?.();
       stopBroadcast = compilerStore.onArtifact((artifact) => {
@@ -301,7 +509,7 @@ export const elfuiDevtools = (
     },
     load(id) {
       return id === resolvedVirtualClientId
-        ? createDevtoolsVirtualClient()
+        ? createDevtoolsVirtualClient(sourceAccessToken, aiAccessToken)
         : undefined;
     },
     transformIndexHtml: () => {

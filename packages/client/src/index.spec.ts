@@ -77,7 +77,7 @@ describe("ComponentInspector", () => {
     inspector.dispose();
   });
 
-  it("selects the concrete inner element and reads template source markers", () => {
+  it("reads legacy beta.15 Fragment fields from template source markers", () => {
     const bridge = createDevtoolsBridge();
     const host = document.createElement("elf-card");
     const shadow = host.attachShadow({ mode: "open" });

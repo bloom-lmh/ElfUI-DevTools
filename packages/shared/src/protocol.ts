@@ -1,9 +1,44 @@
+import {
+  type ScreenshotAsset,
+  type VisualAnnotation,
+  type VisualDraft as VisualDraftModel,
+  type VisualIntent,
+  type VisualTarget as VisualTargetModel,
+} from "@elfui/devtools-visual-intent";
+
+export {
+  DEVTOOLS_VISUAL_SCHEMA_VERSION,
+  isRectSnapshot,
+  isScreenshotAsset,
+  isVisualAnnotation,
+  isVisualDraft,
+  isVisualIntent,
+  isVisualTarget,
+} from "@elfui/devtools-visual-intent";
+export type {
+  RectSnapshot,
+  ScreenshotAsset,
+  ScreenshotKind,
+  ScreenshotPhase,
+  VisualAnnotation,
+  VisualAnnotationType,
+  VisualBindingSnapshot,
+  VisualInspectorElementSnapshot,
+  VisualInspectorTargetSnapshot,
+  VisualIntent,
+  VisualRelation,
+  VisualRelationType,
+  VisualSourceLocation,
+  VisualSourceReference,
+} from "@elfui/devtools-visual-intent";
+
 export const DEVTOOLS_PROTOCOL_VERSION = 2 as const;
 export const DEVTOOLS_PIPELINE_SCHEMA_VERSION = 1 as const;
-export const DEVTOOLS_VISUAL_SCHEMA_VERSION = 1 as const;
 export const DEVTOOLS_AI_CHANGE_SCHEMA_VERSION = 1 as const;
 export const DEVTOOLS_OPEN_IN_EDITOR_ENDPOINT =
   "/__elfui_devtools/open-in-editor" as const;
+export const DEVTOOLS_SOURCE_READ_ENDPOINT =
+  "/__elfui_devtools/source-read" as const;
 export const DEVTOOLS_COMPILER_STATE_ENDPOINT =
   "/__elfui_devtools/compiler-state" as const;
 export const DEVTOOLS_COMPILER_UPDATE_EVENT =
@@ -83,6 +118,7 @@ export const ELFUI_TEMPLATE_NODE_DEBUG_KEY =
 export interface TemplateNodeDebugInfo {
   sourceId: string;
   templateNodeId: string;
+  /** @deprecated Compatibility with ElfUI beta.15 debug markers. */
   fragment?: string;
   source: SourceLocation;
 }
@@ -103,124 +139,17 @@ export interface InspectorTargetSnapshot {
   source?: SourceLocation;
   sourceId?: string;
   templateNodeId?: string;
+  /** @deprecated Compatibility with ElfUI beta.15 debug markers. */
   fragment?: string;
 }
 
-export interface RectSnapshot {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+export type VisualTarget = VisualTargetModel<
+  InspectorTargetSnapshot,
+  SerializedValue,
+  ComponentBindingSnapshot
+>;
 
-export interface VisualSourceReference {
-  sourceId: string;
-  component?: string;
-  fragment?: string;
-  templateNodeId?: string;
-  range?: SourceLocation;
-}
-
-export interface VisualTarget {
-  id: string;
-  runtimeNodeId: string;
-  componentId: string;
-  inspector: InspectorTargetSnapshot;
-  source?: VisualSourceReference;
-  geometry: RectSnapshot;
-  computedStyle?: Record<string, string>;
-  props?: SerializedValue;
-  bindings?: ComponentBindingSnapshot[];
-}
-
-export type VisualRelationType =
-  | "inside"
-  | "before"
-  | "after"
-  | "left-of"
-  | "right-of"
-  | "align-with"
-  | "near";
-
-export interface VisualRelation {
-  type: VisualRelationType;
-  targetId: string;
-}
-
-export type VisualIntent =
-  | {
-      id: string;
-      type: "style";
-      targetId: string;
-      before: Record<string, string>;
-      desired: Record<string, string>;
-    }
-  | {
-      id: string;
-      type: "move";
-      targetId: string;
-      before: RectSnapshot;
-      desired: RectSnapshot;
-      relations: VisualRelation[];
-    }
-  | {
-      id: string;
-      type: "resize";
-      targetId: string;
-      before: RectSnapshot;
-      desired: RectSnapshot;
-    }
-  | {
-      id: string;
-      type: "remove" | "duplicate";
-      targetId: string;
-    };
-
-export type VisualAnnotationType =
-  | "comment"
-  | "rectangle"
-  | "arrow"
-  | "highlight"
-  | "redaction";
-
-export interface VisualAnnotation {
-  id: string;
-  type: VisualAnnotationType;
-  targetIds: string[];
-  text?: string;
-  geometry?: RectSnapshot;
-  from?: { x: number; y: number };
-  to?: { x: number; y: number };
-  createdAt: number;
-}
-
-export interface VisualDraft {
-  schemaVersion: typeof DEVTOOLS_VISUAL_SCHEMA_VERSION;
-  id: string;
-  targets: VisualTarget[];
-  intents: VisualIntent[];
-  annotations: VisualAnnotation[];
-  screenshotIds: string[];
-}
-
-export type ScreenshotKind = "viewport" | "selection";
-export type ScreenshotPhase = "before" | "desired" | "result";
-
-export interface ScreenshotAsset {
-  id: string;
-  kind: ScreenshotKind;
-  phase: ScreenshotPhase;
-  mimeType: "image/png" | "image/jpeg" | "image/webp";
-  width: number;
-  height: number;
-  devicePixelRatio: number;
-  route: string;
-  scroll: { x: number; y: number };
-  capturedAt: number;
-  selection?: RectSnapshot;
-  excludedRegions: RectSnapshot[];
-  byteLength: number;
-}
+export type VisualDraft = VisualDraftModel<VisualTarget>;
 
 export interface ProjectContextSummary {
   framework: "elfui";
@@ -241,10 +170,81 @@ export interface SourceContextBlock {
   id: string;
   sourceId: string;
   component?: string;
+  /** @deprecated Compatibility with ElfUI beta.15 requests. */
   fragment?: string;
   templateNodeId?: string;
   range?: SourceLocation;
   content?: string;
+}
+
+export interface SourceReadRange {
+  startLine: number;
+  endLine: number;
+}
+
+export interface SourceReadRequest {
+  sourceId: string;
+  range?: SourceReadRange;
+}
+
+export interface SourceReadResult {
+  sourceId: string;
+  range: SourceReadRange;
+  content: string;
+  totalLines: number;
+  characterCount: number;
+  truncated: boolean;
+}
+
+export interface AIContextBudget {
+  maxSourceBlocks: number;
+  maxSourceCharacters: number;
+  maxScreenshotBytes: number;
+  maxUserMessageCharacters: number;
+}
+
+export const DEFAULT_AI_CONTEXT_BUDGET: AIContextBudget = {
+  maxSourceBlocks: 12,
+  maxSourceCharacters: 32_000,
+  maxScreenshotBytes: 8_000_000,
+  maxUserMessageCharacters: 4_000,
+};
+
+export type AIContextOmissionReason =
+  | "approval-required"
+  | "not-allowed"
+  | "source-budget"
+  | "screenshot-budget"
+  | "diagnostic-budget";
+
+export interface AIContextOmission {
+  kind: "source" | "screenshot" | "diagnostic";
+  id: string;
+  reason: AIContextOmissionReason;
+}
+
+export interface AIContextRedactionSummary {
+  location: "source" | "user-message" | "diagnostic";
+  id?: string;
+  replacements: number;
+}
+
+export interface AIContextUsage {
+  sourceBlocks: number;
+  sourceCharacters: number;
+  screenshotCount: number;
+  screenshotBytes: number;
+  userMessageCharacters: number;
+}
+
+export interface AIContextGovernance {
+  budget: AIContextBudget;
+  usage: AIContextUsage;
+  approvedSourceIds: string[];
+  pendingSourceApprovals: string[];
+  omissions: AIContextOmission[];
+  redactions: AIContextRedactionSummary[];
+  userMessageTruncated: boolean;
 }
 
 export interface AIChangeConstraints {
@@ -252,6 +252,33 @@ export interface AIChangeConstraints {
   preserveAccessibility: boolean;
   preservePublicAPI: boolean;
   allowedFiles?: string[];
+}
+
+export type AIChangeFollowUpStatus = "partial" | "unmet";
+
+export interface AIChangeFollowUpReference {
+  kind: "visual-intent" | "annotation";
+  id: string;
+  status: AIChangeFollowUpStatus;
+}
+
+export interface AIChangeFollowUpContext {
+  previousRequestId: string;
+  proposalId: string;
+  applicationId: string;
+  verificationId: string;
+  reviewId: string;
+  resultScreenshotId: string;
+  references: AIChangeFollowUpReference[];
+}
+
+export interface AIChangeDiagnostic {
+  id: string;
+  severity: "error" | "warning" | "info";
+  code: string;
+  message: string;
+  sourceId?: string;
+  source?: SourceLocation;
 }
 
 export interface AIChangeRequest {
@@ -265,8 +292,11 @@ export interface AIChangeRequest {
   annotations: VisualAnnotation[];
   screenshots: ScreenshotAsset[];
   sourceContext: SourceContextBlock[];
+  diagnostics?: AIChangeDiagnostic[];
   userMessage?: string;
+  followUp?: AIChangeFollowUpContext;
   constraints: AIChangeConstraints;
+  governance: AIContextGovernance;
 }
 
 export interface ComponentNodeSnapshot {
@@ -296,7 +326,6 @@ export interface ComponentDiagnosticSnapshot {
   code: string;
   message: string;
   hint?: string;
-  fragment?: string;
   source?: SourceLocation;
 }
 

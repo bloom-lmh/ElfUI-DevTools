@@ -1,7 +1,7 @@
 # ElfUI AI DevTools 实施计划
 
 > 状态：实施中  
-> 当前基线：ElfUI `0.1.0-beta.15`、DevTools Protocol v2
+> 当前基线：ElfUI `0.1.0-beta.20`、DevTools Protocol v2
 > 产品范围：ElfUI 开发环境中的传统 DevTools、视觉意图采集和 AI 辅助改码  
 > 非目标：低代码编辑器、手势直接生成源码、任意网页编辑器、生产环境在线改码
 
@@ -76,11 +76,12 @@ ElfUI 源码
 
 当前约束与下一阶段：
 
-- 旧对比计划冻结保留；当前 README、fixture 和实施计划已同步 beta.15 API。
-- Runtime source fallback 仍支持构造器 `__elfSource`，编译状态已消费 beta.15 Metadata v2。
+- 旧对比计划冻结保留；当前 README、fixture 和实施计划已同步 beta.20 API。
+- Runtime source fallback 仍支持构造器 `__elfSource`，编译状态消费当前 Metadata v2。
 - `@elfui/devtools-vite` 已接入 `onMetadata` / `onDiagnostics`、初始 endpoint 和 HMR 增量。
-- 公开 npm 依赖已同步到 ElfUI beta.15；本地协议按 beta.15 registry-first 约定实现。
-- P1 的 Fragment ownership、模板节点级源码身份、编译诊断、导航、键盘和 ARIA 已完成并纳入测试与 Chromium 门禁。
+- 公开 npm 依赖已同步到 ElfUI beta.20；本地协议继续按 registry-first 约定实现。
+- P1 的组件 ownership、模板节点级源码身份、编译诊断、导航、键盘和 ARIA 已完成并纳入测试与 Chromium 门禁。
+- beta.17 已删除 Fragment API 和对应 Compiler Metadata；可选 Fragment 字段只作为 beta.15 历史输入兼容，不再是当前产品能力或验收目标。
 - 没有视觉意图、AI 会话、模型配置和 Patch 审核协议。
 
 ## 四、包与模块边界
@@ -120,7 +121,7 @@ packages/ai                       # 新增
 
 - `MacroComponentMetadata` schema v2。
 - Props、Events、Slots、Expose、Models、Options。
-- Fragment ownership、identity 和 source range。
+- 组件结构、模板节点源码身份和 source range。
 - `onMetadata(metadata, id)`。
 - `onDiagnostics(diagnostics, id)`。
 - Compiler/Core/Vite Plugin protocol version。
@@ -160,7 +161,6 @@ AI Authoring Protocol 只能引用 Observation Protocol 中的稳定 ID，不复
 interface SourceNodeReference {
   sourceId: string;
   component?: string;
-  fragment?: string;
   templateNodeId?: string;
   range: {
     start: number;
@@ -393,7 +393,7 @@ PatchProposal、文件 hash 和用户批准记录。
 - [x] 当前 README、代码和 fixture 不再使用旧 `html` tagged template 或旧生命周期 API；历史对比计划保持冻结。
 - [x] `@elfui/devtools-vite` 接入 `onMetadata` / `onDiagnostics`，通过 endpoint 初始同步并由 HMR 推送增量。
 - [x] 建立 Metadata v2 当前状态索引，使用 `sourceId` 作为文件主键。
-- [x] 在 Compiler metadata 面板显示组件、Fragment ownership、source range 和编译诊断。
+- [x] 在 Compiler metadata 面板显示组件 ownership、source range 和编译诊断。
 - [x] 为 Metadata schema、清空旧诊断、HMR 更新和 snapshot/HMR 竞态增加测试。
 - [x] 将 DevTools Protocol 升级为 v2，并提供明确不兼容错误。
 - [x] 使用桌面 `elfui-echarts-demo` 完成 beta.13 真实浏览器验收，覆盖 ECharts、命名 Fragment、Inspector、数据管线与编译元数据。
@@ -402,14 +402,14 @@ PatchProposal、文件 hash 和用户批准记录。
 
 退出标准：
 
-- beta.13 fixture 可显示组件、Fragment 和诊断。
+- 当前 fixture 可显示组件、源码范围和诊断。
 - DevTools 不再依赖旧 API 文档推断框架能力。
 - 生产构建不包含 metadata client。
 
 浏览器验收记录（2026-07-28）：
 
 - ECharts 看板、DevTools 启动器和面板正常渲染，浏览器无错误与警告。
-- Compiler metadata 显示 `SummaryCard` Fragment、owner component、source range 和 diagnostics。
+- Compiler metadata 显示组件、source range 和 diagnostics。
 - 源码变更后 endpoint revision 与 HMR 增量同步正常。
 - Inspector 点选页面标题后生成 `target-snapshot · inspector/element.select` 管线记录，并关联到模板节点源码位置。
 
@@ -427,11 +427,11 @@ PatchProposal、文件 hash 和用户批准记录。
 - [x] 增加真实 Chromium E2E 门禁（`pnpm test:browser`）。
 - [x] 增加 5,000 节点性能 fixture 和预算门禁。
 
-阶段进展（2026-07-28）：
+阶段进展（2026-07-29）：
 
 - 新增 `InspectorTargetSnapshot`，记录 DOM path、元素身份、组件归属和 `template-node` / `component` / `unresolved` 三档源码精度。
 - Inspector 高亮具体内部元素，选择结果以 `inspector/element.select` 写入可观察 Data Pipeline 面板。
-- ElfUI beta.15 使用全局 Symbol 定位的共享 WeakMap 作为模板节点与 closed render root 的权威存储；beta.14 节点/host Symbol 仅作为兼容镜像，DevTools 按 registry-first 顺序读取。
+- ElfUI beta.18 继续使用全局 Symbol 定位的共享 WeakMap 作为模板节点与 closed render root 的权威存储；旧节点/host Symbol 仅作为兼容镜像，DevTools 按 registry-first 顺序读取。
 - 静态提升树通过开发态 clone helper 保留每个节点的 Symbol 信息；生产宏组件 bundle 已验证不包含标记字符串或 helper。
 - 生成器使用紧凑位置参数传递调试信息；100 组件生产 codegen 为 200.5 KB min / 2.47 KB gzip / 1.09 KB Brotli，开发 codegen 另设 250 KB min 上限。
 - 兼容扫描会递归进入既有 open Shadow Root，解决 DevTools 晚于组件挂载时只发现外层应用的问题。
@@ -447,28 +447,36 @@ PatchProposal、文件 hash 和用户批准记录。
 退出标准：
 
 - 在 elfui-docs Demo 中点选元素能定位准确组件和源码范围。
-- Fragment 内节点能归属外层组件与原始 Fragment。
+- 模板节点能归属正确组件与原始源码范围。
 - HMR 后选区可恢复或明确失效。
 
 ## P2：Visual Intent 与标注
 
-- [ ] 新增 `packages/visual-intent`。
+- [x] 新增 `packages/visual-intent`。
 - [x] 实现 VisualTarget、VisualIntent、Annotation schema 和序列化测试。
 - [x] 实现 Overlay/Ghost/Annotation 三层画布。
 - [x] 实现不修改业务 DOM 的 Ghost 移动预览，并将 target capture、move preview 和 annotation 写入 Data Pipeline。
-- [ ] 实现样式 Preview CSS layer。
-- [ ] 实现 Ghost 移动、缩放和语义关系候选。
+- [x] 实现样式 Preview CSS layer。
+- [x] 实现 Ghost 移动、缩放和语义关系候选。
 - [x] 实现矩形、箭头、高亮和评论。
 - [x] 实现 viewport/选区截图与敏感区域排除。
-- [ ] 实现 Visual Draft 历史、撤销、清空和会话恢复。
-- [ ] 页面导航、HMR 或节点消失时清理或重定位草稿。
+- [x] 实现 Visual Draft 历史、撤销、清空和会话恢复。
+- [x] 页面导航、HMR 或节点消失时清理或重定位草稿。
+- [x] 实现结构化 motion/transition 意图、overlay-only 预览、持久化和 HMR 重定位。
 
-阶段进展（2026-07-28）：
+阶段进展（截至 2026-07-30）：
 
 - 截图已建立 `before` / `desired` / `result`、viewport/selection、route、viewport、DPR、scroll、敏感区域排除和字节大小元数据；浏览器 capture adapter 会请求当前 Tab、裁剪目标与 Ghost 范围、遮罩 DevTools 及用户 Redact 区域并立即停止共享。
 - Visual Draft 可关联多个截图 ID；矩形、箭头、高亮和评论均进入独立 Annotation Layer。
-- Ghost 移动和缩放已生成独立 intent，语义关系候选仍待完成。
-- Visual Draft 已有 50 步有界内存历史、Undo、Clear 和 schema 校验恢复 API；跨刷新会话持久化仍待完成。
+- Ghost 移动和缩放已生成独立 intent，并会记录 drop rect 周边的语义关系候选。
+- Visual Draft 已有 50 步有界内存历史、Undo、Clear、schema 校验恢复 API 和 session storage 跨刷新恢复。
+- Style Preview 使用独立 overlay clone 和 `style` intent，不给业务节点写属性或 inline style；样式草稿按 `templateNodeId` 跨刷新重新绑定，并刷新当前 viewport 几何。
+- Ghost 移动会从 drop rect 周边命中 ElfUI 节点，生成 `inside`、`before`、`after`、`left-of`、`right-of`、`align-with` 和 `near` 语义关系候选。
+- Visual Draft 使用 session storage 跨刷新恢复；恢复时保持 intent 的稳定 target ID，并通过当前组件树重新绑定模板节点。
+- Visual Draft 持久化已增加 route envelope 并兼容旧 raw draft；跨路由草稿会立即失效和移除，避免把上一页面的视觉上下文带入新页面。
+- 组件 mount/update/unmount、业务 DOM 替换及 viewport resize/scroll 会在短暂合并窗口后按稳定 `templateNodeId` 重定位目标并刷新几何；找不到替代节点时会删除依赖 intent，并将仍有 viewport 几何的 annotation 降级为无锚点标注。
+- 草稿重定位、目标失效和页面导航失效分别写入 `visual.target.rebind`、`visual.target.invalidate` 与 `visual.draft.invalidate` Data Pipeline 记录；单元测试和真实 Chromium 门禁覆盖 HMR closed-root 重定位及业务 DOM 不变性。
+- Motion Preview 以 `properties`、`trigger`、`durationMs`、`delayMs`、`easing` 和 `respectReducedMotion` 建模，不使用普通 CSS 字符串代替；预览只绘制 DevTools marker/label，并写入 `visual.motion.preview`。
 
 退出标准：
 
@@ -479,19 +487,34 @@ PatchProposal、文件 hash 和用户批准记录。
 ## P3：AI Context Builder 与会话
 
 - [x] 实现 `AIChangeRequest` schema。
-- [x] 根据选区收集最小组件、Fragment、binding 和源码范围。
+- [x] 根据选区收集最小组件、template node、binding 和源码范围。
 - [x] 关联 before screenshot、desired screenshot、intents 和 annotations。
-- [ ] 实现上下文大小预算、脱敏和扩大范围审批。
-- [ ] 建立 Conversation、Message、Attachment 和引用 ID。
-- [ ] 实现流式文本、取消、重试和错误恢复。
-- [ ] 支持“解释当前页面”“给出修改方案”只读模式。
-- [ ] 建立 50 条视觉意图理解 fixture。
+- [x] 实现上下文大小预算、脱敏和扩大范围审批。
+- [x] 建立 Conversation、Message、Attachment 和引用 ID。
+- [x] 实现流式文本、取消、重试和错误恢复。
+- [x] 支持“解释当前页面”“给出修改方案”只读模式。
+- [x] 建立 50 条视觉意图理解 fixture。
 
-阶段进展（2026-07-28）：
+阶段进展（2026-07-29）：
 
 - `AIContextBuilder` 会冻结当前 Visual Draft，去重目标源码引用，合并页面、项目和安全约束，并生成 Provider 无关的 `AIChangeRequest`。
 - 面板可通过 “Prepare AI request” 显式冻结上下文；该动作只写入 `ai.context.bundle` 和 `ai.request.create` Pipeline 记录，不联系模型、不写文件。
 - 截图二进制由内存资产控制器持有，Pipeline 和 AI 请求协议仅引用可审计元数据；Provider Adapter 后续按截图 ID 解析实际附件。
+- 上下文治理协议已实现源码块、源码字符、截图字节和用户文本预算；常见 Key、Token、Bearer 和私钥会在进入请求/Pipeline 前脱敏。
+- 默认只包含当前 VisualTarget 关联源码；额外 sourceId 未批准时会以 `AI_CONTEXT_APPROVAL_REQUIRED` 诊断和 omission 留在 Data Pipeline，显式批准后才可进入请求。
+- 预算超限、allowedFiles 拒绝和脱敏均有结构化 governance payload 与诊断；面板会显示 budget/usage、redaction、omission、已批准和待审批 sourceId。
+- Compiler State 中不属于当前 VisualTarget 的 sourceId 只作为无内容候选进入治理；用户勾选并批准后才会重建请求，审批和重建动作都写入 Data Pipeline。
+- 新增 `@elfui/devtools-ai`，提供 explain/plan/implement 会话、Message/Attachment、VisualTarget/Intent/源码/诊断/Patch 稳定引用、有界会话存储、只读执行事件协议和确定性模拟 Provider；当前包不依赖 Provider SDK。
+- 会话存储限制会话数和单会话消息数，消息淘汰时清理孤立附件，并支持 pending/streaming/completed/cancelled/failed 状态，为后续流式取消与重试保留稳定协议。
+- 面板已接入 explain/plan 分段会话视图，保存当前 `AIChangeRequest` 的 context attachment、消息和稳定引用；用户显式运行后可消费 Node 流、取消执行、重试失败或取消的执行，并显示 pending/streaming/completed/cancelled/failed 状态。
+- Vite 开发服务已提供 capability token 保护的 `source.readRanges` 等价 endpoint：只接受 Compiler State 中的 sourceId，canonicalize 后必须位于项目根，单文件不超过 1 MB，单次最多返回 200 行和 12,000 字符。
+- Client 只读取当前 VisualTarget 或用户已批准的 sourceId；读取成功/失败都进入 Data Pipeline，失败会降级为引用，成功内容继续经过预算和脱敏。
+- 只读执行时 Client 会删除 `AIChangeRequest.sourceContext[].content`；Vite Node Gateway 根据 Compiler State、项目根、VisualTarget、显式批准范围和预算独立重读并再次脱敏源码，浏览器只接收带连续序号的 started/text-delta/completed/cancelled/failed 审计事件。
+- Node Gateway 当前只连接确定性模拟 Provider，不持有 API Key、不访问外部模型、不提供 implement 或文件写入；同页面 capability token 仍只作为开发态纵深防御，不视为对业务页面的强安全隔离。
+- `summarizeAIChangeRequest()` 会确定性复述目标 ID、tag/text、component/sourceId/templateNodeId/range、几何、关系、style、resize、remove/duplicate、motion timing 和 annotation；模拟 Provider 直接消费同一摘要。
+- `fixtures/visual-intent-understanding/cases.json` 固定包含 50 条数据：10 style、10 move/relation、8 resize、4 remove/duplicate、10 motion、8 annotation/source-reference。测试要求 ID 唯一、分布不漂移，并逐条断言期望事实同时出现在直接摘要和 Provider 输出中。
+- `pnpm verify` 已通过 20 个测试文件、115 项测试；真实 Chromium 门禁已覆盖请求生成、源码审批、Node 重新装配与脱敏、只读流式解释、motion 精确复述、无秘密回显及 HMR 重定位。
+- Playwright CLI 已在 1440×1000 和 390×844 视口完成人工截图检查，覆盖 motion 控件、overlay 和 AI 输出；最新产物位于 `output/playwright/motion-*.png`。
 
 退出标准：
 
@@ -501,14 +524,41 @@ PatchProposal、文件 hash 和用户批准记录。
 
 ## P4：Provider 与模型配置
 
-- [ ] 定义 Provider Adapter 和 capability negotiation。
-- [ ] 实现 OpenAI-compatible Provider。
-- [ ] 再实现至少一个非兼容 Provider，验证抽象没有绑定单一厂商。
-- [ ] 实现模型列表、手动 Model ID 和能力提示。
-- [ ] 实现 temperature、reasoning、max output 和 endpoint 配置。
-- [ ] API Key 仅由本地安全后端持有。
-- [ ] 支持文本/图片/tool call/structured output 降级。
-- [ ] 增加模拟 Provider、流式乱序、限流、超时和断线测试。
+- [x] 定义 Provider Adapter 和 capability negotiation。
+- [x] 实现 OpenAI-compatible Provider。
+- [x] 再实现至少一个非兼容 Provider，验证抽象没有绑定单一厂商。
+- [x] 实现模型列表、手动 Model ID 和能力提示。
+- [x] 实现 temperature、reasoning、max output 和 endpoint 配置。
+- [x] API Key 仅由本地安全后端持有。
+- [x] 支持文本/图片/tool call/structured output 降级。
+- [x] 增加模拟 Provider、流式乱序、限流、超时和断线测试。
+
+阶段进展（截至 2026-07-29）：
+
+- 已定义 Provider/Model descriptor、公开设置、required/preferred capability requirements 和
+  supported/downgraded/rejected negotiation；只读请求始终要求文本，有截图时偏好 image input。
+- `AIProviderRegistry` 支持默认 Provider、显式 Provider/Model、手动 Model ID 能力和 descriptor
+  白名单复制；Provider 切换不会修改 `AIChangeRequest`。
+- Gateway 只接受 model、endpoint、temperature、reasoning 和 max output 等白名单公开设置，拒绝
+  `apiKey` 等额外字段；Provider 错误回传前再次脱敏。
+- `OpenAICompatibleProvider` 使用 Responses SSE，处理 `response.output_text.delta` 和
+  `response.completed`；API Key 仅保存在 Node Provider 闭包，支持注入 fetch、endpoint、超时和截图解析器。
+- `AnthropicMessagesProvider` 使用 Anthropic Messages 风格协议，验证 Provider 抽象不依赖 Responses SSE；
+  支持文本流、图片输入、公开采样设置、超时以及鉴权/429/网络/不完整流错误。
+- Node Gateway 提供 token 保护、`no-store` 的只读 Provider catalog；只返回白名单 descriptor、模型和能力，
+  不返回 Key。Client 支持 Provider 选择、模型列表、手动 Model ID、能力提示以及公开设置的 session state。
+- Provider-neutral 流协议现支持 text delta、tool call、structured output 和 completed；只读模式只传输、审计
+  tool call，不执行任何工具。结构化输出经过 JSON 值校验和 64KB 单事件上限。
+- 截图二进制通过独立、token 保护、`no-store` 的 endpoint 上传；Node 校验 MIME、Base64、字节数、尺寸、
+  元数据白名单和一致性，并以 32MB/64 项上限临时存储。`AIChangeRequest` 和执行正文仍只携带元数据。
+- 模拟测试已覆盖分块 SSE、Anthropic 文本流、图片装配、tool/structured 事件、乱序、429、超时、断线、
+  无完成事件、秘密字段拒绝、catalog 脱敏、截图元数据篡改/缺失和错误脱敏。
+- `pnpm verify` 已通过 23 个测试文件、138 项测试；真实 Chromium 20 条门禁通过。
+- 1440x1000 与 390x844 的 Provider 配置截图已人工检查，桌面双列和移动单列均无溢出或遮挡：
+  - `output/playwright/provider-config-desktop.png`
+  - `output/playwright/provider-config-mobile.png`
+- P4 退出审计通过：Provider 切换不改变 `AIChangeRequest`；不支持 image/tool/structured output 时目录和 UI
+  给出明确提示；Client、Preview、RPC、Pipeline 和 descriptor 均无法读取明文 Key。
 
 退出标准：
 
@@ -518,16 +568,88 @@ PatchProposal、文件 hash 和用户批准记录。
 
 ## P5：AI Agent、Diff 与改码闭环
 
-- [ ] 实现受限 Agent Gateway 和 workspace root 校验。
-- [ ] 实现 source/search/read 工具。
-- [ ] 实现 PatchProposal、文件 hash 和统一 Diff。
-- [ ] AI 先返回计划和假设，再生成 Patch。
-- [ ] 实现批准、拒绝和“带评论退回修改”。
-- [ ] 应用前检查文件未被外部修改。
-- [ ] 应用后执行 formatter、typecheck 和 scoped tests。
-- [ ] 等待 HMR，收集 Runtime/Compiler diagnostics。
-- [ ] 失败时恢复原文件并保留诊断。
-- [ ] 支持基于 Git 或原内容快照的用户级撤销。
+- [x] 实现受限 Agent Gateway 和 workspace root 校验。
+- [x] 实现 source/search/read 工具。
+- [x] 实现 PatchProposal、文件 hash 和统一 Diff。
+- [x] AI 先返回计划和假设，再生成 Patch。
+- [x] 实现批准、拒绝和“带评论退回修改”。
+- [x] 应用前检查文件未被外部修改。
+- [x] 应用后执行 formatter、typecheck 和 scoped tests。
+- [x] 等待 HMR，收集 Runtime/Compiler diagnostics。
+- [x] 失败时恢复原文件并保留诊断。
+- [x] 支持基于 Git 或原内容快照的用户级撤销。
+
+阶段进展（截至 2026-07-29）：
+
+- 已定义 Agent Protocol v1：固定 10 个工具名称，拒绝 `shell.exec` 等任意工具；每个工具使用独立的有界参数
+  schema，不接受原始 shell 命令。
+- 已定义 `PatchProposal`、`PatchApproval`、精确 `baseFileHashes`、风险和结构化验证计划；affected files、hash
+  映射和 validation scopes 必须完全一致，项目路径拒绝绝对路径、`..` 与反斜杠。
+- Vite Node 已实现只读 `project.search`、`source.readRanges` 和 `source.readFile`：只能访问 Compiler State 中且
+  当前请求已批准的 sourceId，复用项目根/符号链接逃逸防护，并执行脱敏、结果数、文件数与字符预算。
+- 源码读取由 Node 对完整文件计算 SHA-256；只读 Proposal store 会解析并校验统一 Diff 的文件头、hunk 行数、
+  affected files 顺序、批准 scope 和实际基线 hash，返回不可变副本且不写文件。
+- 当前提案层只允许修改现有文本文件；rename、copy、create、delete、binary diff、绝对路径和路径穿越均被拒绝。
+- 已建立请求级 Agent session：Provider tool call 必须通过 Agent Protocol 白名单和参数 schema；每轮重新绑定
+  当前 `AIChangeRequest` 的批准源码范围，并限制 8 轮、20 次调用、单轮 8 次调用及 Provider/工具结果字符预算。
+- Gateway 已接入 `project.search`、`source.readRanges`、`source.readFile` 和 `patch.prepare`；工具结果只在 Node 与
+  Provider 间传递，浏览器和 Data Pipeline 只接收不含源码正文的调用状态摘要。`patch.prepare` 会进入只读
+  Proposal store，并校验当前批准范围、统一 Diff 和真实基线 hash，仍不写文件。
+- Node 会从执行模式和 `AIChangeRequest` 自行推导 tool calling、structured output 与 image input 偏好，不接受
+  浏览器声明能力；无工具能力的 Provider 会得到明确降级结果。
+- 已为全部 10 个 Agent 工具发布唯一、Provider-safe 的下划线 wire name、说明和 JSON Schema；适配器将
+  wire name 双向映射为内部固定工具名，模型无法借此扩展工具白名单。
+- OpenAI-compatible Responses 已映射 function tool 定义、`function_call` 历史、`function_call_output` 结果和
+  `response.output_item.done` 调用事件；Anthropic Messages 已映射 `input_schema`、`tool_use`、`tool_result`、
+  `input_json_delta` 和工具块结束事件。两者都通过显式 `supportsToolCalling` 开启能力，并用注入 `fetch` 的
+  模拟请求验证，不需要真实 Key 或外网模型。
+- Agent session 会把历次调用与结果作为有序 exchange 保留并传给下一轮 Provider；外部请求可以恢复完整工具
+  上下文，Node 内部仍执行调用 ID 去重、轮次、次数和字符预算限制。
+- Node 已提供 token 保护、`no-store` 的 PatchProposal catalog 与 decision endpoint；浏览器只提交 request/proposal
+  ID、decision 和可选 comment，不能提交或伪造 Proposal 正文、Diff、批准文件或 hash。
+- Proposal ID 与内容不可变；相同内容重试幂等，不同内容复用 ID 会被拒绝。批准时 Node 会重新读取文件并复核
+  SHA-256，再从已存 Proposal 派生精确 approved files/hash；拒绝和带评论退回不会生成任何批准范围。
+- Plan UI 会先显示 summary、assumptions、影响文件、验证计划和完整统一 Diff，再提供批准、拒绝和带评论退回；
+  退回按钮要求非空评论，所有决策都是终态并写入 Data Pipeline，批准状态明确显示“尚未应用”。
+- 已实现 Node-only `createApprovedPatchApplier`：应用前再次验证 request/proposal/approval ID、精确批准文件、批准
+  hash、当前 Compiler source scope 和实际 SHA-256；统一 Diff 必须逐行匹配当前源码上下文，多 hunk 应用保留
+  原始 LF/CRLF 与末尾换行。
+- 多文件写入会保留原内容快照，并在任一写入或写后 hash 校验失败时按逆序恢复已尝试文件；回滚后再次校验
+  原始 hash。测试覆盖成功应用、伪造 approval ID/hash、批准后外部修改、第二文件写入失败和完整恢复。
+- 应用事务现在保留有界的原始内容快照、before/after hash 和 application ID；formatter 修改后会重新计算并冻结
+  after hash。回滚前会复核当前 after hash，拒绝覆盖外部后续修改，并支持同一 application ID 的幂等调用。
+- 已实现 Node-only `PatchVerificationCoordinator`，固定按 format、typecheck、test-scoped、可选 build、HMR、
+  diagnostics 顺序运行显式配置的适配器。默认要求除 build 外的所有步骤，Proposal validation plan 还能增加
+  必需步骤；模型不能提交命令、改变顺序或跳过必需检查。
+- 验证适配器具有固定超时、AbortSignal、输出字符上限、诊断条数上限和秘密脱敏。任一必需步骤失败、抛错、
+  超时或缺少配置都会自动调用同一应用事务回滚，并向 Provider 返回不含源码正文的检查、诊断和回滚摘要。
+- Vite 插件新增可选 `patchVerification` Node 配置。只有显式配置验证适配器、当前模式为 plan、Node store 已存在
+  同 request 的用户批准且 Provider 协商支持 tool calling 时，Gateway 才会把 `patch.applyApproved` 加入本次
+  Agent `availableTools`；默认配置即使已有批准也继续保持只读。
+- Provider 只收到 Node 派生的 proposal/approval/request ID、摘要和影响文件；OpenAI-compatible 与 Anthropic
+  adapter 都会映射 `patch_apply_approved`，并明确要求模型在验证结果返回前不得声称成功。checks、HMR 和
+  diagnostics 不作为可拆分工具开放，避免模型跳过固定验证顺序。
+- Gateway 集成测试已覆盖“准备提案 → ID-only 批准 → 后续 plan 调用批准应用 → 固定验证 → 成功写入”，以及
+  typecheck 失败后恢复原文件；同时验证默认配置不开放应用工具、批准元数据逐轮隔离复制、浏览器流不泄露
+  源码正文。
+- 已定义浏览器安全的 `patch-verification` 事件，并在 Data Pipeline 记录 application/verification/proposal/
+  request ID、文件路径、before/after/restored hash、固定检查摘要、HMR、受限 diagnostics 和回滚状态；事件
+  有严格字段、数量和字符上限，不包含源码正文或 Provider 私有数据。
+- Proposal UI 已区分“已批准（尚未应用）”“已应用并验证”“验证失败（已回滚）”和“已由用户撤销”；批准动作
+  仍不写文件，用户必须通过独立的后续 Plan 执行入口应用 Patch。
+- Gateway 会拒绝同一 Proposal 的并发和重复应用；成功验证后不再向后续 Provider 会话提供该 Patch，用户撤销
+  成功后才重新开放。
+- 已实现 token 保护的 ID-only 用户撤销 endpoint。Node 只允许撤销当前已验证事务，撤销前复核 after hash；
+  外部编辑会得到 409 且不会被覆盖，成功撤销后可以在新的 hash 校验下重新应用。
+- 真实 Vite fixture 的受控验证适配器会读取实际文件、执行固定 format/typecheck/test-scoped/HMR/diagnostics
+  链并等待真实 Vite watcher；第二次应用会故意触发 typecheck 失败，以验证自动回滚不会留下半应用 Patch。
+- P5 退出审计时 `pnpm verify` 已通过 29 个测试文件、170 项测试，真实 Chromium 33 条门禁通过；覆盖 Node
+  多轮 tool loop、Proposal 审核、批准后显式应用、Vite watcher/HMR、浏览器安全审计、用户撤销、撤销后重试
+  和失败自动回滚。1440x1000 与 390x844 的审批和验证截图均已人工检查：
+  - `output/playwright/patch-proposal-approved-desktop.png`
+  - `output/playwright/patch-proposal-approved-mobile.png`
+  - `output/playwright/patch-verification-verified-desktop.png`
+  - `output/playwright/patch-verification-verified-mobile.png`
 
 退出标准：
 
@@ -538,13 +660,71 @@ PatchProposal、文件 hash 和用户批准记录。
 
 ## P6：结果对照与多轮视觉会话
 
-- [ ] 捕获应用 Patch 后的 result screenshot。
-- [ ] 在 UI 中并排显示 before、desired、result。
-- [ ] 显示未满足的 annotation 和 intent。
-- [ ] 用户可保留草稿继续第二轮 AI 修改。
-- [ ] AI 回复引用具体 intent、annotation、file 和 diagnostic。
-- [ ] 建立接受、部分接受、回退和重新生成流程。
-- [ ] 记录会话审计，但默认不保存完整敏感源码。
+- [x] 捕获应用 Patch 后的 result screenshot。
+- [x] 在 UI 中并排显示 before、desired、result。
+- [x] 显示未满足的 annotation 和 intent。
+- [x] 用户可保留草稿继续第二轮 AI 修改。
+- [x] AI 回复引用具体 intent、annotation、file 和 diagnostic。
+- [x] 建立接受、部分接受、回退和重新生成流程。
+- [x] 记录会话审计，但默认不保存完整敏感源码。
+
+阶段进展（截至 2026-07-29）：
+
+- Patch 验证成功后，Proposal UI 会提供显式 result screenshot 捕获入口；浏览器需要用户手势时不会在异步验证
+  事件中自动触发屏幕共享提示。
+- result screenshot 关联 request/proposal/application/verification ID 和原请求中的 before / desired
+  screenshot ID，并以 `visual.result.capture` 写入 verification 阶段的 Data Pipeline。
+- Pipeline 只记录 screenshot 元数据、关联 ID 和字节大小摘要，不记录 data URL 或二进制正文。
+- result screenshot 与 desired Visual Draft 分离保存；捕获结果不会改变原视觉草稿的 screenshot IDs，
+  重新捕获会替换当前 verification 的结果关联。
+- Proposal UI 已显示 result phase、截图范围、尺寸、截图 ID、before / desired 关联数和重新捕获入口。
+- Proposal UI 已按 result 的稳定关联显示 before、desired、result 三阶段图片；缺失阶段和本地图片已释放
+  都有明确提示，且不会从其他请求或验证轮次借用截图。
+- 三阶段图片只在 Preview DOM 使用本地 data URL；Pipeline 和会话记录仍只保留元数据与关联 ID。
+- 已新增 Provider 无关的 `AIVisualResultReview`，对 request 中每个 intent 和非 redaction annotation 建立
+  `unreviewed` / `met` / `partial` / `unmet` 状态；结果重新捕获会重置旧证据对应的核对。
+- 当前由用户根据三阶段截图显式核对，不把 formatter/typecheck/HMR 通过误当成视觉目标已满足。状态更新会
+  以稳定引用和关联 ID 进入 Pipeline，不包含截图 data URL 或 annotation 文本。
+- `AIChangeRequest.followUp` 会携带上一轮 request/proposal/application/verification/review/result screenshot
+  关联和未满足/部分满足的稳定引用；Node 会基于当前请求重新校验引用归属、状态、数量与结果截图关联。
+- 第二轮请求保持 Visual Draft 及 before / desired screenshot IDs 不变，只将 detached result screenshot 作为
+  第三张 AI 输入截图加入；Provider 摘要会复述稳定引用、状态和 result screenshot ID。
+- UI 提供显式继续修改入口和第二轮治理摘要，并以最多 6 轮的本地历史保留上一轮完整 Patch、验证、结果核对
+  与撤销入口；切换轮次不会丢弃 Visual Draft。
+- `AIChangeRequest` 可携带有界、脱敏且受批准源码范围限制的诊断上下文。Assistant message 不再预填请求中的
+  全部引用；Node 只从 Provider 实际输出中识别 assembled request 中存在的 intent、annotation、file 和
+  diagnostic ID，再发送 `ai.execution.reference`，不接受 Provider 自由标签或外来 ID。
+- 回复引用在 UI 中以可点击芯片显示；intent/annotation 可追踪 Visual Draft 目标，file/diagnostic 可定位批准
+  源码位置，追踪成功与失效都会写入有界 Pipeline 审计。
+- 已新增 Provider 无关的 `AIVisualRoundDecision`，将 `accept`、`partial-accept`、`revert` 和 `regenerate`
+  与 request/proposal/application/verification/review/result screenshot 完整关联。接受要求所有项目均明确满足；
+  部分接受要求核对完成且同时存在已满足和未解决项。
+- 部分接受只把未满足或部分满足的稳定引用带入新请求；接受本身不写文件。回退复用 Node 文件事务，并且只在
+  原内容恢复成功后写入决策审计；回退后重新生成会建立新的 `AIChangeRequest`，同时保留 Visual Draft 和旧结果证据。
+- 每个 proposal 最多保留 8 条轮次决策；重新捕获结果或收到新的 verification 会淘汰旧证据对应的决策。Pipeline
+  只记录关联 ID、动作和稳定引用状态，不包含 screenshot data URL、源码正文或 annotation 文本。
+- Client 会话明确限制为 2 个模式、每会话 100 条消息、每模式 6 轮请求和每 proposal 8 条决策；消息淘汰会
+  清理孤立附件，请求淘汰会同步清理 Patch catalog、verification、rollback、result screenshot、review、
+  decision 和待处理状态，迟到的异步 catalog 响应不能重新挂回已失效请求。
+- `ai.conversation.retention` 只记录容量策略、保留/淘汰的 request/proposal/screenshot 稳定 ID，并明确标记
+  `sourceContentPersisted: false` 与 `screenshotDataPersisted: false`；源码正文和 data URL 不进入该审计。
+- Node 侧 execution、screenshot、proposal 和 application transaction 均已有独立有界存储：已回滚事务可按
+  容量淘汰，仍可撤销的活动事务满载时失败关闭；服务重启会明确终止内存截图与撤销能力，不伪装成持久审计仓库。
+- `pnpm verify` 在受控单 worker 下已通过 31 个测试文件、182 项测试；真实 Chromium 46 条门禁通过。
+  1440x1000 与 390x844
+  result 状态和三阶段对照截图已人工检查，无横向溢出、遮挡或控件重叠：
+  - `output/playwright/result-screenshot-desktop.png`
+  - `output/playwright/result-screenshot-mobile.png`
+  - `output/playwright/screenshot-comparison-desktop.png`
+  - `output/playwright/screenshot-comparison-mobile.png`
+  - `output/playwright/visual-result-review-desktop.png`
+  - `output/playwright/visual-result-review-mobile.png`
+  - `output/playwright/visual-follow-up-desktop.png`
+  - `output/playwright/visual-follow-up-mobile.png`
+  - `output/playwright/ai-reply-references-desktop.png`
+  - `output/playwright/ai-reply-references-mobile.png`
+  - `output/playwright/visual-round-decisions-desktop.png`
+  - `output/playwright/visual-round-decisions-mobile.png`
 
 退出标准：
 
@@ -559,6 +739,30 @@ PatchProposal、文件 hash 和用户批准记录。
 - [ ] 完成安全威胁模型和依赖审计。
 - [ ] 发布 Vite 页面内 Alpha。
 - [ ] 根据真实使用决定是否增加浏览器扩展或 Tauri 独立客户端。
+
+阶段进展（截至 2026-07-29）：
+
+- 已完成第一轮产品 UI 审计，保留现有 Components、Timeline、Compiler、Pipeline 信息架构、ARIA、快捷键、
+  稳定选择器和安全协议；审计记录在 `docs/audits/p7-product-ui.md`。
+- 面板主要表面、控件、AI/Patch/review 状态和 Visual Draft 已统一使用语义颜色 token；`system` 主题会跟随
+  `prefers-color-scheme`，显式 light/dark 仍兼容原有偏好存储。
+- 已补全亮色主题对 AI、Patch、截图对照、review、消息和控件的覆盖，避免亮色页面残留暗色区块。
+- 已加入统一 `:focus-visible` 焦点环和 `prefers-reduced-motion: reduce` 样式规则，不改变 Visual Intent
+  中 `respectReducedMotion` 的语义。
+- AI Panel 已增加 Provider 无关的六阶段工作流状态条：草稿、请求、方案、批准、验证、视觉核对。状态由现有
+  request、execution、不可变 Patch catalog、verification 和 result screenshot 派生，不改变 Patch/verification
+  协议；状态条同时提供稳定 `data-stage`、列表语义和 `aria-live` 摘要。
+- 真实 Chromium 门禁新增主题/键盘焦点和 AI 工作流状态检查，当前为 47 项；1440×1000 与 390×844 的亮/暗
+  截图已人工
+  检查：
+  - `output/playwright/p7-light-desktop.png`
+  - `output/playwright/p7-dark-desktop.png`
+  - `output/playwright/p7-light-mobile.png`
+  - `output/playwright/p7-dark-mobile.png`
+  - `output/playwright/p7-workflow-light-desktop.png`
+  - `output/playwright/p7-workflow-dark-desktop.png`
+  - `output/playwright/p7-workflow-light-mobile.png`
+  - `output/playwright/p7-workflow-dark-mobile.png`
 
 Tauri 不是 MVP 前置条件。只有 Vite 页面内闭环证明有价值后，才评估独立客户端。
 
@@ -595,7 +799,7 @@ Tauri 不是 MVP 前置条件。只有 Vite 页面内闭环证明有价值后，
 
 | 版本          | 范围        | 用户价值                             |
 | ------------- | ----------- | ------------------------------------ |
-| `0.1.0-alpha` | P0–P1       | beta.13 可用的传统 ElfUI DevTools    |
+| `0.1.0-alpha` | P0–P1       | beta.20 可用的传统 ElfUI DevTools    |
 | `0.2.0-alpha` | P2          | 可截图、标注和表达视觉目标           |
 | `0.3.0-alpha` | P3–P4       | 可与多种模型进行视觉上下文会话       |
 | `0.4.0-beta`  | P5          | AI 能在批准后修改源码并完成 HMR 验证 |
@@ -604,13 +808,30 @@ Tauri 不是 MVP 前置条件。只有 Vite 页面内闭环证明有价值后，
 
 ## 十二、立即执行顺序
 
-P0 与 P1 已完成。提交当前已验证工作后推进 P2；不提前接入模型 API 或代码 Agent：
+P0 至 P6 已完成退出审计。当前进入 P7 产品化与稳定化：
 
-1. 建立 template node/source range/runtime node 的关联协议与最小 fixture。（已完成）
-2. 将 Inspector 从 Custom Element host 扩展到任意可定位模板元素。（已完成）
-3. 完成组件树搜索、折叠、选中联动和详情面板。（已完成）
-4. 增加 HMR 后选区恢复/失效规则。（已完成）
-5. 增加 5,000 节点性能 fixture，并落实组件树性能预算。（已完成）
-6. 运行 `pnpm test:browser`，通过真实 Chromium 验证 closed Shadow Root、HMR 选区恢复与 Inspector hover animation-frame 合并预算。（已完成）
-
-提交当前 P1 工作并完成浏览器门禁复核后，开始截图标注和 Visual Intent；模型 API 与代码 Agent 仍保持在后续阶段。
+1. 对齐 ElfUI beta.20，移除 Fragment 作为当前能力的计划、fixture 和 UI 假设，仅保留旧输入兼容。（已完成）
+2. 复核 `pnpm verify`、`pnpm test:large-tree` 与真实 Chromium `pnpm test:browser`。（已完成）
+3. 实现上下文大小预算、脱敏和扩大范围审批。（已完成）
+4. 建立 Conversation、Message、Attachment、稳定引用 ID 和只读会话视图。（已完成）
+5. 建立受项目根和批准范围限制的最小源码读取协议。（已完成）
+6. 将只读解释/方案执行移入 Node 侧，定义流式取消、重试和错误恢复。（已完成）
+7. 补充 motion/transition 视觉意图及对应序列化、Pipeline 和交互测试。（已完成）
+8. 建立 50 条视觉意图理解 fixture，验证稳定目标、意图和源码引用复述。（已完成）
+9. 定义 P4 Provider Adapter、capability negotiation、模型配置和异常流；凭据只进入 Node。（已完成）
+10. 进入 P5：先定义受限工具、`PatchProposal` 与批准协议，不提前开放文件写入。（已完成）
+11. 实现 `patch.applyApproved`、固定检查链、HMR、diagnostics 和失败回滚；每一步继续复核批准记录与文件
+    hash。（已完成）
+12. 将安全的应用/验证/回滚摘要写入 Data Pipeline，再实现用户级撤销和真实浏览器成功/失败/HMR 场景。
+    （已完成）
+13. 进入 P6：捕获并关联 result screenshot，保持 desired Visual Draft 不变。（已完成）
+14. 实现 before / desired / result 对照。（已完成）
+15. 实现未满足 intent / annotation 提示。（已完成）
+16. 保留 Visual Draft 继续第二轮 AI 修改，并携带未满足项的稳定引用。（已完成）
+17. 让 AI 回复显式引用具体 intent、annotation、file 和 diagnostic，并补充可追踪的引用 UI。（已完成）
+18. 建立接受、部分接受、回退和重新生成流程。（已完成）
+19. 补齐会话审计的保留/淘汰边界，完成 P6 退出审计。（已完成）
+20. 进入 P7：先盘点现有工具栏、AI Panel、Diff/验证视图和响应式状态反馈，建立产品化 UI 缺口清单。（已完成）
+21. 用语义 token、主题、焦点和减少动画规则完成第一轮低风险产品化，并由真实 Chromium 和亮暗截图验证。（已完成）
+22. 增加 AI 工作流状态条，明确草稿、请求、方案、批准、验证和视觉核对的当前位置。（已完成）
+23. 收束 Provider 配置与历史轮次层级，并实现 Diff Drawer，不改变 Patch/verification 协议。

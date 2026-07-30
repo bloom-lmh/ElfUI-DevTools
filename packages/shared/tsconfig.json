@@ -3,7 +3,11 @@
   "compilerOptions": {
     "rootDir": "./src",
     "outDir": "./dist",
-    "composite": true
+    "composite": true,
+    "paths": {
+      "@elfui/devtools-visual-intent": ["../visual-intent/src/index.ts"]
+    }
   },
+  "references": [{ "path": "../visual-intent" }],
   "include": ["src/**/*.ts"]
 }

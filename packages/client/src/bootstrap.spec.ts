@@ -51,22 +51,11 @@ describe("compiler artifact ingestion", () => {
                 },
               },
             ],
-            fragments: [
-              {
-                kind: "named",
-                name: "Badge",
-                ownerComponents: ["Card"],
-                identity: "index",
-                source: {
-                  start: 40,
-                  end: 80,
-                  line: 3,
-                  column: 1,
-                  endLine: 4,
-                  endColumn: 2,
-                },
-              },
-            ],
+            diagnostics: {
+              errors: 0,
+              warnings: 1,
+              codes: ["ELF_TEMPLATE_TEST"],
+            },
           },
         },
         {
@@ -78,8 +67,8 @@ describe("compiler artifact ingestion", () => {
           payload: [
             {
               severity: "warning",
-              code: "ELF_FRAGMENT_TEST",
-              message: "Fragment warning",
+              code: "ELF_TEMPLATE_TEST",
+              message: "Template warning",
             },
           ],
         },
@@ -92,7 +81,7 @@ describe("compiler artifact ingestion", () => {
         stage: "observation",
         source: "compiler",
         kind: "compiler.metadata",
-        summary: "src/Card.ts: 1 component, 1 fragment",
+        summary: "src/Card.ts: 1 component",
       },
       {
         parentId: records[0]?.id,
@@ -101,15 +90,14 @@ describe("compiler artifact ingestion", () => {
         diagnostics: [
           {
             severity: "warning",
-            code: "ELF_FRAGMENT_TEST",
-            message: "Fragment warning",
+            code: "ELF_TEMPLATE_TEST",
+            message: "Template warning",
           },
         ],
       },
     ]);
-    expect(JSON.stringify(records[0]?.payload)).toContain('"identity"');
-    expect(JSON.stringify(records[0]?.payload)).toContain('"index"');
-    expect(JSON.stringify(records[0]?.payload)).toContain('"ownerComponents"');
+    expect(JSON.stringify(records[0]?.payload)).toContain('"Card"');
+    expect(JSON.stringify(records[0]?.payload)).toContain('"source"');
 
     ingestCompilerArtifact({
       revision: 3,

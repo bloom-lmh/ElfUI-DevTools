@@ -12,10 +12,17 @@ import {
 } from "@elfui/devtools-shared";
 
 import { DevtoolsPanel } from "./panel.js";
+import type { AIExecutionClient } from "./ai-execution.js";
 import { DevtoolsRpcClient } from "./rpc-client.js";
+import type { ReadSourceContext } from "./source.js";
 
 let activeBridge: ElfUIDevtoolsBridge | null = null;
 const pendingCompilerArtifacts: CompilerArtifact[] = [];
+
+export interface InstallElfUIDevtoolsOptions {
+  aiExecutor?: AIExecutionClient;
+  sourceReader?: ReadSourceContext;
+}
 
 export const ingestCompilerArtifact = (artifact: CompilerArtifact): void => {
   if (!activeBridge) {
@@ -40,7 +47,9 @@ export const ingestCompilerSnapshot = (
   }
 };
 
-export const installElfUIDevtools = (): (() => void) => {
+export const installElfUIDevtools = (
+  options: InstallElfUIDevtoolsOptions = {},
+): (() => void) => {
   const bridge = createDevtoolsBridge();
   activeBridge = bridge;
   for (const artifact of pendingCompilerArtifacts.splice(0)) {
@@ -54,11 +63,29 @@ export const installElfUIDevtools = (): (() => void) => {
   void rpc
     .connect()
     .then(() => {
-      if (!disposed) panel = new DevtoolsPanel(bridge, window.document, rpc);
+      if (!disposed)
+        panel = new DevtoolsPanel(
+          bridge,
+          window.document,
+          rpc,
+          undefined,
+          undefined,
+          options.sourceReader,
+          options.aiExecutor,
+        );
     })
     .catch((error: unknown) => {
       console.warn("[ElfUI DevTools] RPC handshake failed", error);
-      if (!disposed) panel = new DevtoolsPanel(bridge);
+      if (!disposed)
+        panel = new DevtoolsPanel(
+          bridge,
+          window.document,
+          undefined,
+          undefined,
+          undefined,
+          options.sourceReader,
+          options.aiExecutor,
+        );
     });
   return () => {
     disposed = true;

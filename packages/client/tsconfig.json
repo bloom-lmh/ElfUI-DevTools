@@ -5,10 +5,17 @@
     "outDir": "./dist",
     "composite": true,
     "paths": {
+      "@elfui/devtools-ai": ["../ai/src/index.ts"],
+      "@elfui/devtools-visual-intent": ["../visual-intent/src/index.ts"],
       "@elfui/devtools-shared": ["../shared/src/index.ts"],
       "@elfui/devtools-runtime": ["../runtime/src/index.ts"]
     }
   },
-  "references": [{ "path": "../shared" }, { "path": "../runtime" }],
+  "references": [
+    { "path": "../ai" },
+    { "path": "../visual-intent" },
+    { "path": "../shared" },
+    { "path": "../runtime" }
+  ],
   "include": ["src/**/*.ts"]
 }

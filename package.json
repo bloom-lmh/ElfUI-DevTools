@@ -6,7 +6,7 @@
   "description": "Developer tools for the ElfUI Custom Elements framework.",
   "packageManager": "pnpm@10.28.0",
   "scripts": {
-    "build": "tsc -b packages/shared packages/runtime packages/client packages/vite && node scripts/verify-dist.mjs",
+    "build": "tsc -b packages/visual-intent packages/shared packages/runtime packages/ai packages/client packages/vite && node scripts/verify-dist.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:browser": "pnpm build && node scripts/verify-browser-gate.mjs",
@@ -17,8 +17,8 @@
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test"
   },
   "devDependencies": {
-    "@elfui/core": "0.1.0-beta.15",
-    "@elfui/vite-plugin": "0.1.0-beta.15",
+    "@elfui/core": "0.1.0-beta.20",
+    "@elfui/vite-plugin": "0.1.0-beta.20",
     "@eslint/js": "9.39.1",
     "@types/node": "24.10.1",
     "eslint": "9.39.1",

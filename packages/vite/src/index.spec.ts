@@ -3,6 +3,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
+import { Readable } from "node:stream";
 import { elfuiMacroPlugin } from "@elfui/vite-plugin";
 import { build, type Plugin } from "vite";
 import { describe, expect, it, vi } from "vitest";
@@ -10,11 +11,13 @@ import {
   DEVTOOLS_COMPILER_STATE_ENDPOINT,
   DEVTOOLS_COMPILER_UPDATE_EVENT,
   DEVTOOLS_OPEN_IN_EDITOR_ENDPOINT,
+  DEVTOOLS_SOURCE_READ_ENDPOINT,
   createCompilerArtifactStore,
   createCompilerStateMiddleware,
   createDevtoolsBootstrap,
   createDevtoolsVirtualClient,
   createOpenInEditorMiddleware,
+  createSourceReadMiddleware,
   elfuiDevtools,
 } from "./index";
 
@@ -27,6 +30,41 @@ const requestMiddleware = (
   const response = { statusCode: 200, end } as unknown as ServerResponse;
   middleware({ url } as IncomingMessage, response, next);
   return { end, next, response };
+};
+
+const requestSourceMiddleware = async (
+  middleware: ReturnType<typeof createSourceReadMiddleware>,
+  body: unknown,
+  options: { accessToken?: string; method?: string } = {},
+) => {
+  const request = Readable.from([JSON.stringify(body)]) as IncomingMessage;
+  request.url = DEVTOOLS_SOURCE_READ_ENDPOINT;
+  request.method = options.method ?? "POST";
+  request.headers = {
+    "x-elfui-devtools-token": options.accessToken ?? "test-capability",
+  };
+  const next = vi.fn();
+  const setHeader = vi.fn();
+  let statusCode = 200;
+  let responseBody = "";
+  const completed = new Promise<void>((resolveRequest) => {
+    const response = {
+      get statusCode() {
+        return statusCode;
+      },
+      set statusCode(value: number) {
+        statusCode = value;
+      },
+      setHeader,
+      end: (value = "") => {
+        responseBody = String(value);
+        resolveRequest();
+      },
+    } as unknown as ServerResponse;
+    middleware(request, response, next);
+  });
+  await completed;
+  return { body: responseBody, next, setHeader, statusCode };
 };
 
 describe("elfuiDevtools", () => {
@@ -135,7 +173,6 @@ document.querySelector("#app")?.append(document.createElement("elf-production-pr
         schemaVersion: 2,
         sourceId: "src/Card.ts",
         components: [{ name: "Card" }],
-        fragments: [{ name: "Badge" }],
       },
       "/project/src/Card.ts",
     );
@@ -188,9 +225,16 @@ document.querySelector("#app")?.append(document.createElement("elf-production-pr
     expect(next).not.toHaveBeenCalled();
     expect(setHeader).toHaveBeenCalledWith("cache-control", "no-store");
     expect(JSON.parse(String(end.mock.calls[0]?.[0]))).toEqual(snapshot);
-    const client = createDevtoolsVirtualClient();
+    const client = createDevtoolsVirtualClient(
+      "source-capability",
+      "ai-capability",
+    );
     expect(client).toContain("ingestCompilerSnapshot");
     expect(client).toContain("ingestCompilerArtifact");
+    expect(client).toContain("createSourceContextReader");
+    expect(client).toContain("createAIExecutionClient");
+    expect(client).toContain("source-capability");
+    expect(client).toContain("ai-capability");
     expect(client).toContain(DEVTOOLS_COMPILER_UPDATE_EVENT);
   });
 
@@ -214,7 +258,7 @@ document.querySelector("#app")?.append(document.createElement("elf-production-pr
       "/project/src/Hmr.ts",
     );
 
-    expect(use).toHaveBeenCalledTimes(2);
+    expect(use).toHaveBeenCalledTimes(4);
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "custom",
@@ -265,5 +309,116 @@ document.querySelector("#app")?.append(document.createElement("elf-production-pr
     expect(blocked.response.statusCode).toBe(403);
     expect(openInEditor).not.toHaveBeenCalled();
     expect(ignored.next).toHaveBeenCalledOnce();
+  });
+
+  it("reads only known source IDs inside the project root and clamps ranges", async () => {
+    const root = await mkdtemp(join(process.cwd(), ".elfui-source-read-"));
+    try {
+      await mkdir(join(root, "src"));
+      await writeFile(
+        join(root, "src", "Card.ts"),
+        Array.from(
+          { length: 260 },
+          (_, index) => `export const line${index + 1} = ${index + 1};`,
+        ).join("\n"),
+      );
+      const snapshot = {
+        protocolVersion: 2 as const,
+        revision: 1,
+        artifacts: [
+          {
+            revision: 1,
+            capturedAt: 1,
+            id: join(root, "src", "Card.ts"),
+            sourceId: "src/Card.ts",
+            kind: "metadata" as const,
+            payload: {},
+          },
+        ],
+      };
+      const middleware = createSourceReadMiddleware(
+        root,
+        () => snapshot,
+        "test-capability",
+      );
+      const response = await requestSourceMiddleware(middleware, {
+        sourceId: "src/Card.ts",
+        range: { startLine: 20, endLine: 250 },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.next).not.toHaveBeenCalled();
+      expect(response.setHeader).toHaveBeenCalledWith(
+        "cache-control",
+        "no-store",
+      );
+      const result = JSON.parse(response.body) as {
+        sourceId: string;
+        range: { startLine: number; endLine: number };
+        content: string;
+        truncated: boolean;
+      };
+      expect(result).toMatchObject({
+        sourceId: "src/Card.ts",
+        range: { startLine: 20, endLine: 219 },
+        truncated: true,
+      });
+      expect(result.content).toContain("line20");
+      expect(result.content).not.toContain("line220");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects missing capabilities, unknown source IDs, and root escapes", async () => {
+    const root = await mkdtemp(join(process.cwd(), ".elfui-source-deny-"));
+    try {
+      await writeFile(join(root, "known.ts"), "export const known = true;");
+      const snapshot = {
+        protocolVersion: 2 as const,
+        revision: 1,
+        artifacts: [
+          {
+            revision: 1,
+            capturedAt: 1,
+            id: join(root, "known.ts"),
+            sourceId: "known.ts",
+            kind: "metadata" as const,
+            payload: {},
+          },
+          {
+            revision: 2,
+            capturedAt: 2,
+            id: resolve(root, "..", "outside.ts"),
+            sourceId: "../outside.ts",
+            kind: "metadata" as const,
+            payload: {},
+          },
+        ],
+      };
+      const middleware = createSourceReadMiddleware(
+        root,
+        () => snapshot,
+        "test-capability",
+      );
+
+      const missingCapability = await requestSourceMiddleware(
+        middleware,
+        { sourceId: "known.ts" },
+        { accessToken: "wrong" },
+      );
+      const unknownSource = await requestSourceMiddleware(middleware, {
+        sourceId: "unknown.ts",
+      });
+      const escaped = await requestSourceMiddleware(middleware, {
+        sourceId: "../outside.ts",
+      });
+
+      expect(missingCapability.statusCode).toBe(403);
+      expect(unknownSource.statusCode).toBe(403);
+      expect(escaped.statusCode).toBe(403);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

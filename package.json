@@ -17,8 +17,8 @@
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test"
   },
   "devDependencies": {
-    "@elfui/core": "0.1.0-beta.20",
-    "@elfui/vite-plugin": "0.1.0-beta.20",
+    "@elfui/core": "0.1.0-beta.21",
+    "@elfui/vite-plugin": "0.1.0-beta.21",
     "@eslint/js": "9.39.1",
     "@types/node": "24.10.1",
     "eslint": "9.39.1",

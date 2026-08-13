@@ -31,7 +31,7 @@ DevTools 附加一个聊天框。产品目标是解决“很难用语言准确�
 
 当前仓库与版本基线：
 
-- Framework：`E:\dev_projects\elfui-official\elfui`，当前基线 `0.1.0-beta.20`
+- Framework：`E:\dev_projects\elfui-official\elfui`，当前基线 `0.1.0-beta.21`
 - Docs：`E:\dev_projects\elfui-official\elfui-docs`
 - DevTools：`E:\dev_projects\elfui-official\elfui-devtools`
 - DevTools Protocol：v2
@@ -395,7 +395,7 @@ DevTools 附加一个聊天框。产品目标是解决“很难用语言准确�
 
 - 当前工作区有大量未提交的 P2/P3 改动以及新增文件。接手后必须先运行 `git status --short` 和
   `git diff --stat`；不得 reset、checkout、覆盖或重复实现现有工作。
-- Framework 与 DevTools 开发依赖为 `0.1.0-beta.20`；Docs 发布依赖已对齐 `0.1.0-beta.20`，且本地 Docs
+- Framework 与 DevTools 开发依赖为 `0.1.0-beta.21`；Docs 发布依赖已对齐 `0.1.0-beta.21`，且本地 Docs
   开发优先使用 Framework dist。Docs 版本升级不属于当前 DevTools 写入范围。
 - beta.17 已删除 `fragment`、`defineFragment()` 和相应 Compiler Metadata。P4 及后续不得继续把
   Fragment 当作 beta.18 的当前能力，只可在解析层保留必要的旧输入兼容。

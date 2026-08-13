@@ -1,7 +1,7 @@
 # ElfUI AI DevTools 实施计划
 
 > 状态：实施中  
-> 当前基线：ElfUI `0.1.0-beta.20`、DevTools Protocol v2
+> 当前基线：ElfUI `0.1.0-beta.21`、DevTools Protocol v2
 > 产品范围：ElfUI 开发环境中的传统 DevTools、视觉意图采集和 AI 辅助改码  
 > 非目标：低代码编辑器、手势直接生成源码、任意网页编辑器、生产环境在线改码
 
@@ -76,10 +76,10 @@ ElfUI 源码
 
 当前约束与下一阶段：
 
-- 旧对比计划冻结保留；当前 README、fixture 和实施计划已同步 beta.20 API。
+- 旧对比计划冻结保留；当前 README、fixture 和实施计划已同步 beta.21 API。
 - Runtime source fallback 仍支持构造器 `__elfSource`，编译状态消费当前 Metadata v2。
 - `@elfui/devtools-vite` 已接入 `onMetadata` / `onDiagnostics`、初始 endpoint 和 HMR 增量。
-- 公开 npm 依赖已同步到 ElfUI beta.20；本地协议继续按 registry-first 约定实现。
+- 公开 npm 依赖已同步到 ElfUI beta.21；本地协议继续按 registry-first 约定实现。
 - P1 的组件 ownership、模板节点级源码身份、编译诊断、导航、键盘和 ARIA 已完成并纳入测试与 Chromium 门禁。
 - beta.17 已删除 Fragment API 和对应 Compiler Metadata；可选 Fragment 字段只作为 beta.15 历史输入兼容，不再是当前产品能力或验收目标。
 - 没有视觉意图、AI 会话、模型配置和 Patch 审核协议。
@@ -799,7 +799,7 @@ Tauri 不是 MVP 前置条件。只有 Vite 页面内闭环证明有价值后，
 
 | 版本          | 范围        | 用户价值                             |
 | ------------- | ----------- | ------------------------------------ |
-| `0.1.0-alpha` | P0–P1       | beta.20 可用的传统 ElfUI DevTools    |
+| `0.1.0-alpha` | P0–P1       | beta.21 可用的传统 ElfUI DevTools    |
 | `0.2.0-alpha` | P2          | 可截图、标注和表达视觉目标           |
 | `0.3.0-alpha` | P3–P4       | 可与多种模型进行视觉上下文会话       |
 | `0.4.0-beta`  | P5          | AI 能在批准后修改源码并完成 HMR 验证 |
@@ -810,7 +810,7 @@ Tauri 不是 MVP 前置条件。只有 Vite 页面内闭环证明有价值后，
 
 P0 至 P6 已完成退出审计。当前进入 P7 产品化与稳定化：
 
-1. 对齐 ElfUI beta.20，移除 Fragment 作为当前能力的计划、fixture 和 UI 假设，仅保留旧输入兼容。（已完成）
+1. 对齐 ElfUI beta.21，移除 Fragment 作为当前能力的计划、fixture 和 UI 假设，仅保留旧输入兼容。（已完成）
 2. 复核 `pnpm verify`、`pnpm test:large-tree` 与真实 Chromium `pnpm test:browser`。（已完成）
 3. 实现上下文大小预算、脱敏和扩大范围审批。（已完成）
 4. 建立 Conversation、Message、Attachment、稳定引用 ID 和只读会话视图。（已完成）
